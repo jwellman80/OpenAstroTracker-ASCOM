@@ -31,14 +31,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Runtime.InteropServices;
+using System.Globalization;
+using System.Collections;
 
 using ASCOM;
 using ASCOM.Astrometry;
 using ASCOM.Astrometry.AstroUtils;
 using ASCOM.Utilities;
 using ASCOM.DeviceInterface;
-using System.Globalization;
-using System.Collections;
+using ASCOM.Astrometry.Transform;
+
 
 namespace ASCOM.OpenAstroTracker
 {
@@ -57,19 +59,26 @@ namespace ASCOM.OpenAstroTracker
     /// ASCOM Telescope Driver for OpenAstroTracker.
     /// </summary>
     [Guid("2bdfd29a-7deb-448a-a73f-23a7469cca44")]
+    [ProgId("ASCOM.OpenastroTracker.Telescope")]
+    [ServedClassName("OpenAstroTracker Telescope")]
     [ClassInterface(ClassInterfaceType.None)]
-    public class Telescope : ITelescopeV3
+    public class Telescope :
+    ReferenceCountedObjectBase,
+    ITelescopeV3
     {
         /// <summary>
         /// ASCOM DeviceID (COM ProgID) for this driver.
         /// The DeviceID is used by ASCOM applications to load the driver at runtime.
         /// </summary>
-        internal static string driverID = "ASCOM.OpenAstroTracker.Telescope";
+        // Removing this per local server readme doesn't make any sense...it's circular
+        internal static string driverID = SharedResources.driverID;
         // TODO Change the descriptive string for your driver then remove this line
         /// <summary>
         /// Driver description that displays in the ASCOM Chooser.
         /// </summary>
-        private static string driverDescription = "ASCOM Telescope Driver for OpenAstroTracker.";
+        // Removing this per the readme doesn't explain how to get it back using the attributes as it suggests
+        private static string driverDescription = "OpenAstroTracker Telescope";
+        private static string driverShortName = "OpenAstroTracker";
 
         internal static string comPortProfileName = "COM Port"; // Constants used for Profile persistence
         internal static string comPortDefault = "COM1";
@@ -77,6 +86,8 @@ namespace ASCOM.OpenAstroTracker
         internal static string traceStateDefault = "false";
 
         internal static string comPort; // Variables to hold the currrent device configuration
+
+        public ASCOM.Astrometry.Transform.Transform transform;
 
         /// <summary>
         /// Private variable to hold the connected state
@@ -96,7 +107,7 @@ namespace ASCOM.OpenAstroTracker
         /// <summary>
         /// Variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
         /// </summary>
-        internal static TraceLogger tl;
+        // internal static TraceLogger tl;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OpenAstroTracker"/> class.
@@ -104,17 +115,19 @@ namespace ASCOM.OpenAstroTracker
         /// </summary>
         public Telescope()
         {
-            tl = new TraceLogger("", "OpenAstroTracker");
-            ReadProfile(); // Read device configuration from the ASCOM Profile store
-
-            tl.LogMessage("Telescope", "Starting initialisation");
+            SharedResources.ReadProfile(); // Read device configuration from the ASCOM Profile store
+            SharedResources.tl.LogMessage("Telescope", "Starting initialization");
 
             connectedState = false; // Initialise connected to false
             utilities = new Util(); //Initialise util object
             astroUtilities = new AstroUtils(); // Initialise astro utilities object
-            //TODO: Implement your additional construction here
-
-            tl.LogMessage("Telescope", "Completed initialisation");
+            transform = new Transform();
+            transform.SetJ2000(utilities.HMSToHours("02:31:51.12"), utilities.DMSToDegrees("89:15:51.4"));
+            transform.SiteElevation = SiteElevation;
+            transform.SiteLatitude = SiteLatitude;
+            transform.SiteLongitude = SiteLongitude;
+            SharedResources.PolarisRAJNow = transform.RATopocentric;
+            SharedResources.tl.LogMessage("Telescope", "Completed initialization");
         }
 
 
@@ -151,7 +164,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SupportedActions Get", "Returning empty arraylist");
+                SharedResources.tl.LogMessage("SupportedActions Get", "Returning empty arraylist");
                 return new ArrayList();
             }
         }
@@ -195,9 +208,9 @@ namespace ASCOM.OpenAstroTracker
         public void Dispose()
         {
             // Clean up the tracelogger and util objects
-            tl.Enabled = false;
-            tl.Dispose();
-            tl = null;
+            // SharedResources.tl.Enabled = false;
+            // SharedResources.tl.Dispose();
+            // tl = null;
             utilities.Dispose();
             utilities = null;
             astroUtilities.Dispose();
@@ -208,26 +221,44 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                LogMessage("Connected", "Get {0}", IsConnected);
+                SharedResources.tl.LogMessage("Connected Get", IsConnected.ToString());
                 return IsConnected;
             }
             set
             {
-                tl.LogMessage("Connected", "Set {0}", value);
+                SharedResources.tl.LogMessage("Connected Set", value.ToString());
                 if (value == IsConnected)
                     return;
 
                 if (value)
                 {
-                    connectedState = true;
-                    LogMessage("Connected Set", "Connecting to port {0}", comPort);
-                    // TODO connect to the device
+                    SharedResources.Connected = true;
+                    connectedState = SharedResources.Connected;
+                    SharedResources.tl.LogMessage(driverShortName + " Switch Connected Set", "Connected, " + SharedResources.connections + " connections active");
+                    if (SharedResources.connections == 1)
+                    {
+                                            if (SiderealTime - SharedResources.PolarisRAJNow < 0)
+                                            {
+
+                                            }
+                        CommandString(":SH" + utilities.HoursToHM(24 + (SiderealTime - PolarisRAJNow)), False)
+                    Else
+                        CommandString(":SH" + utilities.HoursToHM(SiderealTime - PolarisRAJNow), False)
+                    End If
+                    Dim sign As String = "+"
+                    If SiteLatitude < 0 Then
+                        sign = "-"
+                    End If
+                    CommandString(":SY" + sign + utilities.DegreesToDMS(90, "*", ":", String.Empty) + "." + utilities.HoursToHMS(SiderealTime, ":", ":"), False)
+                    TL.LogMessage("Connected Set", "Connecting to port " + comPort)
+
+                    }
                 }
                 else
                 {
                     connectedState = false;
-                    LogMessage("Connected Set", "Disconnecting from port {0}", comPort);
-                    // TODO disconnect from the device
+                    SharedResources.Connected = false;
+                    SharedResources.tl.LogMessage(driverShortName + " Switch Connected Set", "Disconnected, " + SharedResources.connections + " connections active");
                 }
             }
         }
@@ -237,7 +268,7 @@ namespace ASCOM.OpenAstroTracker
             // TODO customise this device description
             get
             {
-                tl.LogMessage("Description Get", driverDescription);
+                SharedResources.tl.LogMessage("Description Get", driverDescription);
                 return driverDescription;
             }
         }
@@ -249,7 +280,7 @@ namespace ASCOM.OpenAstroTracker
                 Version version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 // TODO customise this driver description
                 string driverInfo = "Information about the driver itself. Version: " + String.Format(CultureInfo.InvariantCulture, "{0}.{1}", version.Major, version.Minor);
-                tl.LogMessage("DriverInfo Get", driverInfo);
+                SharedResources.tl.LogMessage("DriverInfo Get", driverInfo);
                 return driverInfo;
             }
         }
@@ -260,7 +291,7 @@ namespace ASCOM.OpenAstroTracker
             {
                 Version version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 string driverVersion = String.Format(CultureInfo.InvariantCulture, "{0}.{1}", version.Major, version.Minor);
-                tl.LogMessage("DriverVersion Get", driverVersion);
+                SharedResources.tl.LogMessage("DriverVersion Get", driverVersion);
                 return driverVersion;
             }
         }
@@ -280,7 +311,7 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 string name = "Short driver name - please customise";
-                tl.LogMessage("Name Get", name);
+                SharedResources.tl.LogMessage("Name Get", name);
                 return name;
             }
         }
@@ -290,7 +321,7 @@ namespace ASCOM.OpenAstroTracker
         #region ITelescope Implementation
         public void AbortSlew()
         {
-            tl.LogMessage("AbortSlew", "Not implemented");
+            SharedResources.tl.LogMessage("AbortSlew", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("AbortSlew");
         }
 
@@ -298,7 +329,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("AlignmentMode Get", "Not implemented");
+                SharedResources.tl.LogMessage("AlignmentMode Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("AlignmentMode", false);
             }
         }
@@ -307,7 +338,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("Altitude", "Not implemented");
+                SharedResources.tl.LogMessage("Altitude", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("Altitude", false);
             }
         }
@@ -316,7 +347,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("ApertureArea Get", "Not implemented");
+                SharedResources.tl.LogMessage("ApertureArea Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("ApertureArea", false);
             }
         }
@@ -325,7 +356,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("ApertureDiameter Get", "Not implemented");
+                SharedResources.tl.LogMessage("ApertureDiameter Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("ApertureDiameter", false);
             }
         }
@@ -334,7 +365,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("AtHome", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("AtHome", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -343,14 +374,14 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("AtPark", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("AtPark", "Get - " + false.ToString());
                 return false;
             }
         }
 
         public IAxisRates AxisRates(TelescopeAxes Axis)
         {
-            tl.LogMessage("AxisRates", "Get - " + Axis.ToString());
+            SharedResources.tl.LogMessage("AxisRates", "Get - " + Axis.ToString());
             return new AxisRates(Axis);
         }
 
@@ -358,7 +389,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("Azimuth Get", "Not implemented");
+                SharedResources.tl.LogMessage("Azimuth Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("Azimuth", false);
             }
         }
@@ -367,14 +398,14 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanFindHome", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanFindHome", "Get - " + false.ToString());
                 return false;
             }
         }
 
         public bool CanMoveAxis(TelescopeAxes Axis)
         {
-            tl.LogMessage("CanMoveAxis", "Get - " + Axis.ToString());
+            SharedResources.tl.LogMessage("CanMoveAxis", "Get - " + Axis.ToString());
             switch (Axis)
             {
                 case TelescopeAxes.axisPrimary: return false;
@@ -388,7 +419,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanPark", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanPark", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -397,7 +428,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanPulseGuide", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanPulseGuide", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -406,7 +437,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetDeclinationRate", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetDeclinationRate", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -415,7 +446,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetGuideRates", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetGuideRates", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -424,7 +455,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetPark", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetPark", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -433,7 +464,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetPierSide", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetPierSide", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -442,7 +473,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetRightAscensionRate", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetRightAscensionRate", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -451,7 +482,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSetTracking", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSetTracking", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -460,7 +491,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSlew", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSlew", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -469,7 +500,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSlewAltAz", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSlewAltAz", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -478,7 +509,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSlewAltAzAsync", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSlewAltAzAsync", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -487,7 +518,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSlewAsync", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSlewAsync", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -496,7 +527,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSync", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSync", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -505,7 +536,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanSyncAltAz", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanSyncAltAz", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -514,7 +545,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("CanUnpark", "Get - " + false.ToString());
+                SharedResources.tl.LogMessage("CanUnpark", "Get - " + false.ToString());
                 return false;
             }
         }
@@ -524,7 +555,7 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 double declination = 0.0;
-                tl.LogMessage("Declination", "Get - " + utilities.DegreesToDMS(declination, ":", ":"));
+                SharedResources.tl.LogMessage("Declination", "Get - " + utilities.DegreesToDMS(declination, ":", ":"));
                 return declination;
             }
         }
@@ -534,19 +565,19 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 double declination = 0.0;
-                tl.LogMessage("DeclinationRate", "Get - " + declination.ToString());
+                SharedResources.tl.LogMessage("DeclinationRate", "Get - " + declination.ToString());
                 return declination;
             }
             set
             {
-                tl.LogMessage("DeclinationRate Set", "Not implemented");
+                SharedResources.tl.LogMessage("DeclinationRate Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("DeclinationRate", true);
             }
         }
 
         public PierSide DestinationSideOfPier(double RightAscension, double Declination)
         {
-            tl.LogMessage("DestinationSideOfPier Get", "Not implemented");
+            SharedResources.tl.LogMessage("DestinationSideOfPier Get", "Not implemented");
             throw new ASCOM.PropertyNotImplementedException("DestinationSideOfPier", false);
         }
 
@@ -554,12 +585,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("DoesRefraction Get", "Not implemented");
+                SharedResources.tl.LogMessage("DoesRefraction Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("DoesRefraction", false);
             }
             set
             {
-                tl.LogMessage("DoesRefraction Set", "Not implemented");
+                SharedResources.tl.LogMessage("DoesRefraction Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("DoesRefraction", true);
             }
         }
@@ -569,14 +600,14 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 EquatorialCoordinateType equatorialSystem = EquatorialCoordinateType.equTopocentric;
-                tl.LogMessage("DeclinationRate", "Get - " + equatorialSystem.ToString());
+                SharedResources.tl.LogMessage("DeclinationRate", "Get - " + equatorialSystem.ToString());
                 return equatorialSystem;
             }
         }
 
         public void FindHome()
         {
-            tl.LogMessage("FindHome", "Not implemented");
+            SharedResources.tl.LogMessage("FindHome", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("FindHome");
         }
 
@@ -584,7 +615,7 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("FocalLength Get", "Not implemented");
+                SharedResources.tl.LogMessage("FocalLength Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("FocalLength", false);
             }
         }
@@ -593,12 +624,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("GuideRateDeclination Get", "Not implemented");
+                SharedResources.tl.LogMessage("GuideRateDeclination Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("GuideRateDeclination", false);
             }
             set
             {
-                tl.LogMessage("GuideRateDeclination Set", "Not implemented");
+                SharedResources.tl.LogMessage("GuideRateDeclination Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("GuideRateDeclination", true);
             }
         }
@@ -607,12 +638,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("GuideRateRightAscension Get", "Not implemented");
+                SharedResources.tl.LogMessage("GuideRateRightAscension Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("GuideRateRightAscension", false);
             }
             set
             {
-                tl.LogMessage("GuideRateRightAscension Set", "Not implemented");
+                SharedResources.tl.LogMessage("GuideRateRightAscension Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("GuideRateRightAscension", true);
             }
         }
@@ -621,26 +652,26 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("IsPulseGuiding Get", "Not implemented");
+                SharedResources.tl.LogMessage("IsPulseGuiding Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("IsPulseGuiding", false);
             }
         }
 
         public void MoveAxis(TelescopeAxes Axis, double Rate)
         {
-            tl.LogMessage("MoveAxis", "Not implemented");
+            SharedResources.tl.LogMessage("MoveAxis", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("MoveAxis");
         }
 
         public void Park()
         {
-            tl.LogMessage("Park", "Not implemented");
+            SharedResources.tl.LogMessage("Park", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("Park");
         }
 
         public void PulseGuide(GuideDirections Direction, int Duration)
         {
-            tl.LogMessage("PulseGuide", "Not implemented");
+            SharedResources.tl.LogMessage("PulseGuide", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("PulseGuide");
         }
 
@@ -649,7 +680,7 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 double rightAscension = 0.0;
-                tl.LogMessage("RightAscension", "Get - " + utilities.HoursToHMS(rightAscension));
+                SharedResources.tl.LogMessage("RightAscension", "Get - " + utilities.HoursToHMS(rightAscension));
                 return rightAscension;
             }
         }
@@ -659,19 +690,19 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 double rightAscensionRate = 0.0;
-                tl.LogMessage("RightAscensionRate", "Get - " + rightAscensionRate.ToString());
+                SharedResources.tl.LogMessage("RightAscensionRate", "Get - " + rightAscensionRate.ToString());
                 return rightAscensionRate;
             }
             set
             {
-                tl.LogMessage("RightAscensionRate Set", "Not implemented");
+                SharedResources.tl.LogMessage("RightAscensionRate Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("RightAscensionRate", true);
             }
         }
 
         public void SetPark()
         {
-            tl.LogMessage("SetPark", "Not implemented");
+            SharedResources.tl.LogMessage("SetPark", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SetPark");
         }
 
@@ -679,12 +710,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SideOfPier Get", "Not implemented");
+                SharedResources.tl.LogMessage("SideOfPier Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SideOfPier", false);
             }
             set
             {
-                tl.LogMessage("SideOfPier Set", "Not implemented");
+                SharedResources.tl.LogMessage("SideOfPier Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SideOfPier", true);
             }
         }
@@ -710,7 +741,7 @@ namespace ASCOM.OpenAstroTracker
                 // Reduce to the range 0 to 24 hours
                 siderealTime = astroUtilities.ConditionRA(siderealTime);
 
-                tl.LogMessage("SiderealTime", "Get - " + siderealTime.ToString());
+                SharedResources.tl.LogMessage("SiderealTime", "Get - " + siderealTime.ToString());
                 return siderealTime;
             }
         }
@@ -719,12 +750,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SiteElevation Get", "Not implemented");
+                SharedResources.tl.LogMessage("SiteElevation Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteElevation", false);
             }
             set
             {
-                tl.LogMessage("SiteElevation Set", "Not implemented");
+                SharedResources.tl.LogMessage("SiteElevation Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteElevation", true);
             }
         }
@@ -733,12 +764,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SiteLatitude Get", "Not implemented");
+                SharedResources.tl.LogMessage("SiteLatitude Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteLatitude", false);
             }
             set
             {
-                tl.LogMessage("SiteLatitude Set", "Not implemented");
+                SharedResources.tl.LogMessage("SiteLatitude Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteLatitude", true);
             }
         }
@@ -747,12 +778,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SiteLongitude Get", "Not implemented");
+                SharedResources.tl.LogMessage("SiteLongitude Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteLongitude", false);
             }
             set
             {
-                tl.LogMessage("SiteLongitude Set", "Not implemented");
+                SharedResources.tl.LogMessage("SiteLongitude Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SiteLongitude", true);
             }
         }
@@ -761,49 +792,49 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("SlewSettleTime Get", "Not implemented");
+                SharedResources.tl.LogMessage("SlewSettleTime Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SlewSettleTime", false);
             }
             set
             {
-                tl.LogMessage("SlewSettleTime Set", "Not implemented");
+                SharedResources.tl.LogMessage("SlewSettleTime Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("SlewSettleTime", true);
             }
         }
 
         public void SlewToAltAz(double Azimuth, double Altitude)
         {
-            tl.LogMessage("SlewToAltAz", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToAltAz", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToAltAz");
         }
 
         public void SlewToAltAzAsync(double Azimuth, double Altitude)
         {
-            tl.LogMessage("SlewToAltAzAsync", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToAltAzAsync", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToAltAzAsync");
         }
 
         public void SlewToCoordinates(double RightAscension, double Declination)
         {
-            tl.LogMessage("SlewToCoordinates", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToCoordinates", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToCoordinates");
         }
 
         public void SlewToCoordinatesAsync(double RightAscension, double Declination)
         {
-            tl.LogMessage("SlewToCoordinatesAsync", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToCoordinatesAsync", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToCoordinatesAsync");
         }
 
         public void SlewToTarget()
         {
-            tl.LogMessage("SlewToTarget", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToTarget", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToTarget");
         }
 
         public void SlewToTargetAsync()
         {
-            tl.LogMessage("SlewToTargetAsync", "Not implemented");
+            SharedResources.tl.LogMessage("SlewToTargetAsync", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SlewToTargetAsync");
         }
 
@@ -811,26 +842,26 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("Slewing Get", "Not implemented");
+                SharedResources.tl.LogMessage("Slewing Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("Slewing", false);
             }
         }
 
         public void SyncToAltAz(double Azimuth, double Altitude)
         {
-            tl.LogMessage("SyncToAltAz", "Not implemented");
+            SharedResources.tl.LogMessage("SyncToAltAz", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SyncToAltAz");
         }
 
         public void SyncToCoordinates(double RightAscension, double Declination)
         {
-            tl.LogMessage("SyncToCoordinates", "Not implemented");
+            SharedResources.tl.LogMessage("SyncToCoordinates", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SyncToCoordinates");
         }
 
         public void SyncToTarget()
         {
-            tl.LogMessage("SyncToTarget", "Not implemented");
+            SharedResources.tl.LogMessage("SyncToTarget", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("SyncToTarget");
         }
 
@@ -838,12 +869,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("TargetDeclination Get", "Not implemented");
+                SharedResources.tl.LogMessage("TargetDeclination Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TargetDeclination", false);
             }
             set
             {
-                tl.LogMessage("TargetDeclination Set", "Not implemented");
+                SharedResources.tl.LogMessage("TargetDeclination Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TargetDeclination", true);
             }
         }
@@ -852,12 +883,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("TargetRightAscension Get", "Not implemented");
+                SharedResources.tl.LogMessage("TargetRightAscension Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TargetRightAscension", false);
             }
             set
             {
-                tl.LogMessage("TargetRightAscension Set", "Not implemented");
+                SharedResources.tl.LogMessage("TargetRightAscension Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TargetRightAscension", true);
             }
         }
@@ -867,12 +898,12 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 bool tracking = true;
-                tl.LogMessage("Tracking", "Get - " + tracking.ToString());
+                SharedResources.tl.LogMessage("Tracking", "Get - " + tracking.ToString());
                 return tracking;
             }
             set
             {
-                tl.LogMessage("Tracking Set", "Not implemented");
+                SharedResources.tl.LogMessage("Tracking Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("Tracking", true);
             }
         }
@@ -881,12 +912,12 @@ namespace ASCOM.OpenAstroTracker
         {
             get
             {
-                tl.LogMessage("TrackingRate Get", "Not implemented");
+                SharedResources.tl.LogMessage("TrackingRate Get", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TrackingRate", false);
             }
             set
             {
-                tl.LogMessage("TrackingRate Set", "Not implemented");
+                SharedResources.tl.LogMessage("TrackingRate Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("TrackingRate", true);
             }
         }
@@ -896,10 +927,10 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 ITrackingRates trackingRates = new TrackingRates();
-                tl.LogMessage("TrackingRates", "Get - ");
+                SharedResources.tl.LogMessage("TrackingRates", "Get - ");
                 foreach (DriveRates driveRate in trackingRates)
                 {
-                    tl.LogMessage("TrackingRates", "Get - " + driveRate.ToString());
+                    SharedResources.tl.LogMessage("TrackingRates", "Get - " + driveRate.ToString());
                 }
                 return trackingRates;
             }
@@ -910,19 +941,19 @@ namespace ASCOM.OpenAstroTracker
             get
             {
                 DateTime utcDate = DateTime.UtcNow;
-                tl.LogMessage("TrackingRates", "Get - " + String.Format("MM/dd/yy HH:mm:ss", utcDate));
+                SharedResources.tl.LogMessage("TrackingRates", "Get - " + String.Format("MM/dd/yy HH:mm:ss", utcDate));
                 return utcDate;
             }
             set
             {
-                tl.LogMessage("UTCDate Set", "Not implemented");
+                SharedResources.tl.LogMessage("UTCDate Set", "Not implemented");
                 throw new ASCOM.PropertyNotImplementedException("UTCDate", true);
             }
         }
 
         public void Unpark()
         {
-            tl.LogMessage("Unpark", "Not implemented");
+            SharedResources.tl.LogMessage("Unpark", "Not implemented");
             throw new ASCOM.MethodNotImplementedException("Unpark");
         }
 
@@ -933,76 +964,77 @@ namespace ASCOM.OpenAstroTracker
         // to help with driver development
 
         #region ASCOM Registration
+        // Removed per Local Server readme
 
-        // Register or unregister driver for ASCOM. This is harmless if already
-        // registered or unregistered. 
-        //
-        /// <summary>
-        /// Register or unregister the driver with the ASCOM Platform.
-        /// This is harmless if the driver is already registered/unregistered.
-        /// </summary>
-        /// <param name="bRegister">If <c>true</c>, registers the driver, otherwise unregisters it.</param>
-        private static void RegUnregASCOM(bool bRegister)
-        {
-            using (var P = new ASCOM.Utilities.Profile())
-            {
-                P.DeviceType = "Telescope";
-                if (bRegister)
-                {
-                    P.Register(driverID, driverDescription);
-                }
-                else
-                {
-                    P.Unregister(driverID);
-                }
-            }
-        }
+        //// Register or unregister driver for ASCOM. This is harmless if already
+        //// registered or unregistered. 
+        ////
+        ///// <summary>
+        ///// Register or unregister the driver with the ASCOM Platform.
+        ///// This is harmless if the driver is already registered/unregistered.
+        ///// </summary>
+        ///// <param name="bRegister">If <c>true</c>, registers the driver, otherwise unregisters it.</param>
+        //private static void RegUnregASCOM(bool bRegister)
+        //{
+        //    using (var P = new ASCOM.Utilities.Profile())
+        //    {
+        //        P.DeviceType = "Telescope";
+        //        if (bRegister)
+        //        {
+        //            P.Register(driverID, driverDescription);
+        //        }
+        //        else
+        //        {
+        //            P.Unregister(driverID);
+        //        }
+        //    }
+        //}
 
-        /// <summary>
-        /// This function registers the driver with the ASCOM Chooser and
-        /// is called automatically whenever this class is registered for COM Interop.
-        /// </summary>
-        /// <param name="t">Type of the class being registered, not used.</param>
-        /// <remarks>
-        /// This method typically runs in two distinct situations:
-        /// <list type="numbered">
-        /// <item>
-        /// In Visual Studio, when the project is successfully built.
-        /// For this to work correctly, the option <c>Register for COM Interop</c>
-        /// must be enabled in the project settings.
-        /// </item>
-        /// <item>During setup, when the installer registers the assembly for COM Interop.</item>
-        /// </list>
-        /// This technique should mean that it is never necessary to manually register a driver with ASCOM.
-        /// </remarks>
-        [ComRegisterFunction]
-        public static void RegisterASCOM(Type t)
-        {
-            RegUnregASCOM(true);
-        }
+        ///// <summary>
+        ///// This function registers the driver with the ASCOM Chooser and
+        ///// is called automatically whenever this class is registered for COM Interop.
+        ///// </summary>
+        ///// <param name="t">Type of the class being registered, not used.</param>
+        ///// <remarks>
+        ///// This method typically runs in two distinct situations:
+        ///// <list type="numbered">
+        ///// <item>
+        ///// In Visual Studio, when the project is successfully built.
+        ///// For this to work correctly, the option <c>Register for COM Interop</c>
+        ///// must be enabled in the project settings.
+        ///// </item>
+        ///// <item>During setup, when the installer registers the assembly for COM Interop.</item>
+        ///// </list>
+        ///// This technique should mean that it is never necessary to manually register a driver with ASCOM.
+        ///// </remarks>
+        //[ComRegisterFunction]
+        //public static void RegisterASCOM(Type t)
+        //{
+        //    RegUnregASCOM(true);
+        //}
 
-        /// <summary>
-        /// This function unregisters the driver from the ASCOM Chooser and
-        /// is called automatically whenever this class is unregistered from COM Interop.
-        /// </summary>
-        /// <param name="t">Type of the class being registered, not used.</param>
-        /// <remarks>
-        /// This method typically runs in two distinct situations:
-        /// <list type="numbered">
-        /// <item>
-        /// In Visual Studio, when the project is cleaned or prior to rebuilding.
-        /// For this to work correctly, the option <c>Register for COM Interop</c>
-        /// must be enabled in the project settings.
-        /// </item>
-        /// <item>During uninstall, when the installer unregisters the assembly from COM Interop.</item>
-        /// </list>
-        /// This technique should mean that it is never necessary to manually unregister a driver from ASCOM.
-        /// </remarks>
-        [ComUnregisterFunction]
-        public static void UnregisterASCOM(Type t)
-        {
-            RegUnregASCOM(false);
-        }
+        ///// <summary>
+        ///// This function unregisters the driver from the ASCOM Chooser and
+        ///// is called automatically whenever this class is unregistered from COM Interop.
+        ///// </summary>
+        ///// <param name="t">Type of the class being registered, not used.</param>
+        ///// <remarks>
+        ///// This method typically runs in two distinct situations:
+        ///// <list type="numbered">
+        ///// <item>
+        ///// In Visual Studio, when the project is cleaned or prior to rebuilding.
+        ///// For this to work correctly, the option <c>Register for COM Interop</c>
+        ///// must be enabled in the project settings.
+        ///// </item>
+        ///// <item>During uninstall, when the installer unregisters the assembly from COM Interop.</item>
+        ///// </list>
+        ///// This technique should mean that it is never necessary to manually unregister a driver from ASCOM.
+        ///// </remarks>
+        //[ComUnregisterFunction]
+        //public static void UnregisterASCOM(Type t)
+        //{
+        //    RegUnregASCOM(false);
+        //}
 
         #endregion
 
@@ -1038,7 +1070,7 @@ namespace ASCOM.OpenAstroTracker
             using (Profile driverProfile = new Profile())
             {
                 driverProfile.DeviceType = "Telescope";
-                tl.Enabled = Convert.ToBoolean(driverProfile.GetValue(driverID, traceStateProfileName, string.Empty, traceStateDefault));
+                SharedResources.tl.Enabled = Convert.ToBoolean(driverProfile.GetValue(driverID, traceStateProfileName, string.Empty, traceStateDefault));
                 comPort = driverProfile.GetValue(driverID, comPortProfileName, string.Empty, comPortDefault);
             }
         }
@@ -1051,7 +1083,7 @@ namespace ASCOM.OpenAstroTracker
             using (Profile driverProfile = new Profile())
             {
                 driverProfile.DeviceType = "Telescope";
-                driverProfile.WriteValue(driverID, traceStateProfileName, tl.Enabled.ToString());
+                driverProfile.WriteValue(driverID, traceStateProfileName, SharedResources.tl.Enabled.ToString());
                 driverProfile.WriteValue(driverID, comPortProfileName, comPort.ToString());
             }
         }
@@ -1065,7 +1097,7 @@ namespace ASCOM.OpenAstroTracker
         internal static void LogMessage(string identifier, string message, params object[] args)
         {
             var msg = string.Format(message, args);
-            tl.LogMessage(identifier, msg);
+            SharedResources.tl.LogMessage(identifier, msg);
         }
         #endregion
     }
