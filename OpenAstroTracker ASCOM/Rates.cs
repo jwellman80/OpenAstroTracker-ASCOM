@@ -18,7 +18,7 @@ namespace ASCOM.OpenAstroTracker
     // The ClassInterface/None addribute prevents an empty interface called
     // _Rate from being created and used as the [default] interface
     //
-    [Guid("c2587c95-bfd9-4d53-86a0-3677e50aeb9f")]
+    [Guid("df4ad798-053f-4633-aed8-efad267db64b")]
     [ClassInterface(ClassInterfaceType.None)]
     [ComVisible(true)]
     public class Rate : ASCOM.DeviceInterface.IRate
@@ -43,14 +43,12 @@ namespace ASCOM.OpenAstroTracker
             // TODO Add any required object cleanup here
         }
 
-        public double Maximum
-        {
+        public double Maximum {
             get { return this.maximum; }
             set { this.maximum = value; }
         }
 
-        public double Minimum
-        {
+        public double Minimum {
             get { return this.minimum; }
             set { this.minimum = value; }
         }
@@ -69,7 +67,7 @@ namespace ASCOM.OpenAstroTracker
     // The ClassInterface/None addribute prevents an empty interface called
     // _AxisRates from being created and used as the [default] interface
     //
-    [Guid("4ad424a6-267e-477f-b366-57ccba0d940d")]
+    [Guid("8267259a-4042-4580-87d3-65e810e2bfd2")]
     [ClassInterface(ClassInterfaceType.None)]
     [ComVisible(true)]
     public class AxisRates : IAxisRates, IEnumerable
@@ -114,8 +112,7 @@ namespace ASCOM.OpenAstroTracker
 
         #region IAxisRates Members
 
-        public int Count
-        {
+        public int Count {
             get { return this.rates.Length; }
         }
 
@@ -129,8 +126,7 @@ namespace ASCOM.OpenAstroTracker
             return rates.GetEnumerator();
         }
 
-        public IRate this[int index]
-        {
+        public IRate this[int index] {
             get { return this.rates[index - 1]; }	// 1-based
         }
 
@@ -152,7 +148,7 @@ namespace ASCOM.OpenAstroTracker
     // will work with this .NET 4.0 object.  Changes to this have proved to be challenging
     // and it is strongly suggested that it isn't changed.
     //
-    [Guid("0bdad7aa-2b08-4d09-b390-6cbcdc936424")]
+    [Guid("d428dffb-d88e-462a-ac6a-1576988c4e4b")]
     [ClassInterface(ClassInterfaceType.None)]
     [ComVisible(true)]
     public class TrackingRates : ITrackingRates, IEnumerable, IEnumerator
@@ -180,8 +176,7 @@ namespace ASCOM.OpenAstroTracker
 
         #region ITrackingRates Members
 
-        public int Count
-        {
+        public int Count {
             get { return this.trackingRates.Length; }
         }
 
@@ -196,8 +191,7 @@ namespace ASCOM.OpenAstroTracker
             // TODO Add any required object cleanup here
         }
 
-        public DriveRates this[int index]
-        {
+        public DriveRates this[int index] {
             get { return this.trackingRates[index - 1]; }   // 1-based
         }
 
@@ -205,10 +199,8 @@ namespace ASCOM.OpenAstroTracker
 
         #region IEnumerable members
 
-        public object Current
-        {
-            get
-            {
+        public object Current {
+            get {
                 lock (lockObj)
                 {
                     if (pos.Value < 0 || pos.Value >= trackingRates.Length)

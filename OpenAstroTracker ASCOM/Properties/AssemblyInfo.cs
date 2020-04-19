@@ -11,7 +11,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyDescription("ASCOM Telescope driver for OpenAstroTracker")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("The ASCOM Initiative")]
-[assembly: AssemblyProduct("ASCOM Telescope driver for OpenAstroTracker")]
+[assembly: AssemblyProduct("OpenAstroTracker")]
 [assembly: AssemblyCopyright("Copyright © 2020 The ASCOM Initiative")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -22,7 +22,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(true)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("006f0d90-26de-4740-9b70-544c2edf996c")]
+[assembly: Guid("de610b71-dd5e-4089-a090-c83d6c3e1042")]
 
 // Version information for an assembly consists of the following four values:
 //
