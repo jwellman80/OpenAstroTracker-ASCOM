@@ -25,21 +25,21 @@ namespace ASCOM.OpenAstroTracker {
         internal static double PolarisRAJNow = 0.0;
         internal static DriveRates driveRate = DriveRates.driveSidereal;
 
-        private Util _utilities = new Util(); 
+        private Util _utilities = new Util();
         private AstroUtils _astroUtilities = new AstroUtils();
-        private TraceLogger _tl; // Private variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
+        private TraceLogger _tl;
         private Transform _transform = new Transform();
 
-        private bool isParked = false;
-        private bool isTracking = true;
-        private double targetRA;
-        private double targetDec;
-        private bool targetRASet = false;
-        private bool targetDecSet = false;
+        private bool _isParked;
+        private bool _isTracking = true;
+        private double _targetRa;
+        private double _targetDec;
+        private bool _targetRaSet;
+        private bool _targetDecSet;
         private readonly Mutex _mutexCommand = new Mutex(false, "CommMutex");
+        private bool _isConnected = false;
 
-
-        private ProfileData Profile { get; set; } = SharedResources.ReadProfile();
+        private ProfileData Profile => SharedResources.ReadProfile();
 
         // 
         // Constructor - Must be public for COM registration!
@@ -73,16 +73,14 @@ namespace ASCOM.OpenAstroTracker {
         public void SetupDialog() {
             // consider only showing the setup dialog if not connected
             // or call a different dialog if connected
-            if (IsConnected)
-                System.Windows.Forms.MessageBox.Show("Already connected, just press OK");
+            if (IsConnected) {
+                MessageBox.Show("Already connected, just press OK");
+            }
 
-            using (SetupDialogForm F = new SetupDialogForm(Profile)) {
-                System.Windows.Forms.DialogResult result = F.ShowDialog();
-                if (result == DialogResult.OK) {
-
-                    SharedResources.WriteProfile(F
+            using (var f = new SetupDialogForm(Profile)) {
+                if (f.ShowDialog() == DialogResult.OK) {
+                    SharedResources.WriteProfile(f
                         .GetProfileData()); // Persist device configuration values to the ASCOM Profile store
-                    Profile = SharedResources.ReadProfile();
                 }
             }
         }
@@ -112,7 +110,7 @@ namespace ASCOM.OpenAstroTracker {
                         _transform.SetTopocentric(System.Convert.ToDouble(ActionParameters.Split(',')[0]),
                             System.Convert.ToDouble(ActionParameters.Split(',')[1]));
                         retVal = _utilities.HoursToHMS(_transform.RAJ2000, ":", ":", string.Empty) + "&" +
-                                 _utilities.DegreesToDMS(_transform.DecJ2000, "*", ":", string.Empty);
+                                 DegreesToDmsWithSign(_transform.DecJ2000, "*", ":", string.Empty);
                         break;
                     }
                 }
@@ -127,8 +125,6 @@ namespace ASCOM.OpenAstroTracker {
         public void CommandBlind(string Command, bool Raw = false) {
             _mutexCommand.WaitOne();
 
-            if (!Raw)
-                Command = Command + "#";
             try {
                 SharedResources.SendMessageBlind(Command);
                 LogMessage("CommandBlind", "Transmitted " + Command);
@@ -148,8 +144,6 @@ namespace ASCOM.OpenAstroTracker {
         public string CommandString(string Command, bool Raw = false) {
             _mutexCommand.WaitOne();
 
-            if (!Raw)
-                Command = Command + "#";
             try {
                 var response = SharedResources.SendMessageString(Command);
                 LogMessage("CommandString", "Received " + response);
@@ -165,8 +159,13 @@ namespace ASCOM.OpenAstroTracker {
         }
 
         public bool Connected {
-            get => SharedResources.Connected;
-            set => SharedResources.Connected = value;
+            get => IsConnected;
+            set {
+                if (IsConnected != value) {
+                    _isConnected = value;
+                    SharedResources.Connected = value;
+                }
+            }
         }
 
         public string Description {
@@ -272,8 +271,8 @@ namespace ASCOM.OpenAstroTracker {
 
         public bool AtPark {
             get {
-                LogMessage("AtPark", "Get - " + isParked.ToString());
-                return isParked; // Custom boolean we added to track parked state
+                LogMessage("AtPark", "Get - " + _isParked.ToString());
+                return _isParked; // Custom boolean we added to track parked state
             }
         }
 
@@ -529,7 +528,7 @@ namespace ASCOM.OpenAstroTracker {
                 // Else
                 CommandString(":hP", false);
                 PollUntilZero(":GIS");
-                isParked = true;
+                _isParked = true;
                 LogMessage("Park", "Parked mount");
             }
         }
@@ -676,76 +675,59 @@ namespace ASCOM.OpenAstroTracker {
             throw new ASCOM.MethodNotImplementedException("SlewToAltAzAsync");
         }
 
-        public void SlewToCoordinates(double RightAscension, double Declination) {
-            // Synchronous slew to given coordinates.  Uses PollUntilZero to wait for slew to finish
-            if (RightAscension <= 24 && RightAscension >= 0 && Declination >= -90 && Declination <= 90) {
-                if (!AtPark) {
-                    LogMessage("SlewToCoordinates",
-                        "RA " + RightAscension.ToString() + ", Dec " + Declination.ToString());
-                    var strRAcmd = ":Sr" + _utilities.HoursToHMS(RightAscension, ":", ":");
-                    var strDeccmd = _utilities.DegreesToDMS(Declination, "*", ":", "");
-                    if (Declination >= 0)
-                        strDeccmd = "+" + strDeccmd;
-                    strDeccmd = ":Sd" + strDeccmd;
-                    LogMessage("SlewToCoordinatesRACmd", strRAcmd);
-                    LogMessage("SlewToCoordinatesDecCmd", strDeccmd);
-                    if (CommandString(strRAcmd) == "1") {
-                        if (CommandString(strDeccmd) == "1") {
-                            CommandString(":MS");
-                            PollUntilZero(":GIS");
-                        }
-                    }
-                }
-                else {
-                    LogMessage("SlewToCoordinates", "Parked");
-                    throw new ASCOM.ParkedException("SlewToCoordinates");
+        public void SlewToCoordinates(double ra, double dec) =>
+            SlewToCoordinatesWithWait("SlewToCoordinates", ra, dec, true);
+
+        private void SlewToCoordinatesWithWait(string caller, double ra, double dec, bool wait) {
+            if (AtPark) {
+                LogMessage(caller, "Parked");
+                throw new ASCOM.ParkedException(caller);
+            }
+
+            if (ValidateCoordinates(ra, dec)) {
+                LogMessage(caller, "RA " + ra.ToString() + ", Dec " + dec.ToString());
+                SetTargetCoordinates(ra, dec);
+                CommandString(":MS");
+                if (wait) {
+                    PollUntilZero(":GIS");
                 }
             }
             else {
-                LogMessage("SlewToCoordinates",
-                    "Invalid coordinates RA: " + RightAscension.ToString() + ", Dec: " + Declination.ToString());
-                throw new ASCOM.InvalidValueException("SlewToCoordinates");
+                LogMessage(caller, "Invalid coordinates RA: " + ra.ToString() + ", Dec: " + dec.ToString());
+                throw new ASCOM.InvalidValueException(caller);
             }
         }
 
-        public void SlewToCoordinatesAsync(double RightAscension, double Declination) {
-            // ASynchronous slew to coordinates.  Returns immediately after receiving response from :MS that command was accepted
-            if (RightAscension <= 24 && RightAscension >= 0 && Declination >= -90 && Declination <= 90) {
-                if (!AtPark) {
-                    LogMessage("SlewToCoordinatesAsync",
-                        "RA " + RightAscension.ToString() + ", Dec " + Declination.ToString());
-                    var strRAcmd = ":Sr" + _utilities.HoursToHMS(RightAscension, ":", ":");
-                    var strDeccmd = _utilities.DegreesToDMS(Declination, "*", ":", "");
-                    if (Declination >= 0)
-                        strDeccmd = "+" + strDeccmd;
-                    strDeccmd = ":Sd" + strDeccmd;
-                    LogMessage("SlewToCoordinatesAsyncRACmd", strRAcmd);
-                    LogMessage("SlewToCoordinatesAsyncDecCmd", strDeccmd);
-                    if (CommandString(strRAcmd) == "1") {
-                        if (CommandString(strDeccmd) == "1")
-                            CommandString(":MS");
-                    }
-                }
-                else {
-                    LogMessage("SlewToCoordinatesAsync", "Parked");
-                    throw new ASCOM.ParkedException("SlewToCoordinatesAsync");
-                }
-            }
-            else {
-                LogMessage("SlewToCoordinatesAsync",
-                    "Invalid coordinates RA: " + RightAscension.ToString() + ", Dec: " + Declination.ToString());
-                throw new ASCOM.InvalidValueException("SlewToCoordinatesAsync");
-            }
+        private bool SetTargetCoordinates(double rightAscension, double declination) {
+            var strRAcmd = ":Sr" + _utilities.HoursToHMS(rightAscension, ":", ":");
+            var strDeccmd = $":Sd" + DegreesToDmsWithSign(declination, "*", ":", "");
+            LogMessage("SetTargetCoordinates", strRAcmd);
+            LogMessage("SetTargetCoordinates", strDeccmd);
+
+            return CommandString(strRAcmd) == "1" && CommandString(strDeccmd) == "1";
         }
+
+        public void SlewToCoordinatesAsync(double ra, double dec) =>
+            SlewToCoordinatesWithWait("SlewToCoordinatesAsync", ra, dec, false);
 
         public void SlewToTarget() {
-            LogMessage("SlewToTarget", TargetRightAscension.ToString() + ", " + TargetDeclination.ToString());
-            SlewToCoordinates(TargetRightAscension, TargetDeclination);
+            if (_targetRaSet && _targetDecSet) {
+                LogMessage("SlewToTarget", TargetRightAscension.ToString() + ", " + TargetDeclination.ToString());
+                SlewToCoordinates(TargetRightAscension, TargetDeclination);
+            }
+            else {
+                throw new InvalidValueException("TargetRightAscension or TargetDeclination are not set or valid");
+            }
         }
 
         public void SlewToTargetAsync() {
-            LogMessage("SlewToTargetAsync", TargetRightAscension.ToString() + ", " + TargetDeclination.ToString());
-            SlewToCoordinatesAsync(TargetRightAscension, TargetDeclination);
+            if (_targetRaSet && _targetDecSet) {
+                LogMessage("SlewToTargetAsync", TargetRightAscension.ToString() + ", " + TargetDeclination.ToString());
+                SlewToCoordinatesAsync(TargetRightAscension, TargetDeclination);
+            }
+            else {
+                throw new InvalidValueException("TargetRightAscension or TargetDeclination are not set or valid");
+            }
         }
 
         public bool Slewing {
@@ -762,78 +744,39 @@ namespace ASCOM.OpenAstroTracker {
         }
 
         public void SyncToCoordinates(double RightAscension, double Declination) {
-            if (!AtPark) {
-                if (RightAscension <= 24 && RightAscension >= 0 && Declination >= -90 && Declination <= 90) {
-                    string sign = string.Empty;
-                    if (Declination >= 0)
-                        sign = "+";
-                    string success =
-                        CommandString(
-                            ":SY" + sign + _utilities.DegreesToDMS(Declination, "*", ":", string.Empty) + "." +
-                            _utilities.HoursToHMS(RightAscension, ":", ":"), false);
-                    if (success == "1")
-                        LogMessage("SyncToCoordinates",
-                            "Synced to " + _utilities.DegreesToDMS(Declination) + ", " +
-                            _utilities.HoursToHMS(RightAscension));
-                    else {
-                        LogMessage("SyncToCoordinates",
-                            "Err - Failed to sync to " + _utilities.DegreesToDMS(Declination) + ", " +
-                            _utilities.HoursToHMS(RightAscension));
-                        throw new ASCOM.DriverException("SyncToCoordinates");
-                    }
-                }
-                else {
-                    LogMessage("SyncToCoordinates",
-                        "Err - Invalid coordinates RA: " + RightAscension.ToString() + ", Dec: " +
-                        Declination.ToString());
-                    throw new ASCOM.InvalidValueException("SyncToCoordinates");
-                }
-            }
-            else {
-                LogMessage("SyncToCoordinates", "Err - Parked");
+            if (AtPark) {
+                LogMessage("SyncToCoordinates", "Parked");
                 throw new ASCOM.ParkedException("SyncToCoordinates");
             }
+
+            if (ValidateCoordinates(RightAscension, Declination)) {
+                LogMessage("SyncToCoordinates", "RA " + RightAscension.ToString() + ", Dec " + Declination.ToString());
+                SetTargetCoordinates(RightAscension, Declination);
+                CommandBlind(":CM");
+            }
+            else {
+                LogMessage("SyncToCoordinates",
+                    "Invalid coordinates RA: " + RightAscension.ToString() + ", Dec: " + Declination.ToString());
+                throw new ASCOM.InvalidValueException("SyncToCoordinates");
+            }
+        }
+
+        private bool ValidateCoordinates(double rightAscension, double declination) {
+            return rightAscension <= 24 && rightAscension >= 0 && declination >= -90 && declination <= 90;
         }
 
         public void SyncToTarget() {
-            if (!AtPark) {
-                if (targetDecSet) {
-                    if (targetRASet) {
-                        string sign = string.Empty;
-                        if (TargetDeclination >= 0)
-                            sign = "+";
-                        string success =
-                            CommandString(
-                                ":SY" + sign + _utilities.DegreesToDMS(TargetDeclination, "*", ":", string.Empty) + "." +
-                                _utilities.HoursToHMS(TargetRightAscension, ":", ":"), false);
-                        if (success == "1")
-                            LogMessage("SyncToTarget",
-                                "Synced to " + _utilities.DegreesToDMS(TargetDeclination) + ", " +
-                                _utilities.HoursToHMS(TargetRightAscension));
-                        else {
-                            LogMessage("SyncToTarget",
-                                "Failed to sync to " + _utilities.DegreesToDMS(TargetDeclination) + ", " +
-                                _utilities.HoursToHMS(TargetRightAscension));
-                            throw new ASCOM.DriverException("SyncToTarget");
-                        }
-                    }
-                    else
-                        throw new ASCOM.ValueNotSetException("TargetRightAscension");
-                }
-                else
-                    throw new ASCOM.ValueNotSetException("TargetDeclination");
-            }
-            else {
-                LogMessage("SyncToTarget", "Err - Parked");
-                throw new ASCOM.ParkedException("SyncToTarget");
+            if (_targetDecSet && _targetRaSet) {
+                SyncToCoordinates(TargetRightAscension, TargetDeclination);
             }
         }
 
+
         public double TargetDeclination {
             get {
-                if (targetDecSet) {
-                    LogMessage("TargetDeclination Get", targetDec.ToString());
-                    return targetDec;
+                if (_targetDecSet) {
+                    LogMessage("TargetDeclination Get", _targetDec.ToString());
+                    return _targetDec;
                 }
                 else {
                     LogMessage("TargetDeclination Get", "Value not set");
@@ -843,8 +786,8 @@ namespace ASCOM.OpenAstroTracker {
             set {
                 if (value >= -90 && value <= 90) {
                     LogMessage("TargetDeclination Set", value.ToString());
-                    targetDec = value;
-                    targetDecSet = true;
+                    _targetDec = value;
+                    _targetDecSet = true;
                 }
                 else {
                     LogMessage("TargetDeclination Set", "Invalid Value " + value.ToString());
@@ -855,9 +798,9 @@ namespace ASCOM.OpenAstroTracker {
 
         public double TargetRightAscension {
             get {
-                if (targetRASet) {
-                    LogMessage("TargetRightAscension Get", targetRA.ToString());
-                    return targetRA;
+                if (_targetRaSet) {
+                    LogMessage("TargetRightAscension Get", _targetRa.ToString());
+                    return _targetRa;
                 }
                 else {
                     LogMessage("TargetRightAscension Get", "Value not set");
@@ -867,8 +810,8 @@ namespace ASCOM.OpenAstroTracker {
             set {
                 if (value >= 0 && value <= 24) {
                     LogMessage("TargetRightAscension Set", value.ToString());
-                    targetRA = value;
-                    targetRASet = true;
+                    _targetRa = value;
+                    _targetRaSet = true;
                 }
                 else {
                     LogMessage("TargetRightAscension Set", "Invalid Value " + value.ToString());
@@ -880,19 +823,19 @@ namespace ASCOM.OpenAstroTracker {
         public bool Tracking {
             get {
                 if (CommandString(":GIT", false) == "0") {
-                    isTracking = false;
+                    _isTracking = false;
                     LogMessage("Tracking", "Get - " + false.ToString());
                 }
                 else {
-                    isTracking = true;
+                    _isTracking = true;
                     LogMessage("Tracking", "Get - " + true.ToString());
                 }
 
-                return isTracking;
+                return _isTracking;
             }
             set {
                 if (CommandString(":MT" + Convert.ToInt32(value).ToString(), false) == "1") {
-                    isTracking = value;
+                    _isTracking = value;
                     LogMessage("Tracking Set", value.ToString());
                 }
                 else {
@@ -941,8 +884,13 @@ namespace ASCOM.OpenAstroTracker {
                 string unprkRet = CommandString(":hU", false);
                 if (unprkRet == "1")
                     LogMessage("Unpark", "Unparked mount");
-                isParked = false;
+                _isParked = false;
             }
+        }
+
+        private string DegreesToDmsWithSign(double degrees, string degSep = "°", string minSep = "'",
+            string secondSep = "\"") {
+            return (degrees >= 0 ? "+" : "") + _utilities.DegreesToDMS(degrees, degSep, minSep, secondSep);
         }
 
 
@@ -974,7 +922,7 @@ namespace ASCOM.OpenAstroTracker {
         ///     ''' Returns true if there is a valid connection to the driver hardware
         ///     ''' </summary>
         // TODO check that the driver hardware connection exists and is connected to the hardware
-        private bool IsConnected => SharedResources.Connected;
+        private bool IsConnected => SharedResources.Connected && _isConnected;
 
         /// <summary>
         ///     ''' Use this function to throw an exception if we aren't connected to the hardware
@@ -989,7 +937,7 @@ namespace ASCOM.OpenAstroTracker {
             // Takes a command to be sent via CommandString, and resends every 1000ms until a 0 is returned.  Returns 0 only when complete.
             string retVal = "";
             while (retVal != "0") {
-                retVal = CommandString(command, false);
+                retVal = CommandString(command);
                 Thread.Sleep(1000);
             }
 

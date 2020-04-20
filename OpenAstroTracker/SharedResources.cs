@@ -125,12 +125,14 @@ namespace ASCOM.OpenAstroTracker {
         private static string SendMessage(string message, Boolean reply) {
             lock (lockObject) {
                 tl.LogMessage("OAT Server", "Lock Object");
-                string msg = message + "#";
+                if (!message.EndsWith("#")) {
+                    message += "#";
+                }
 
                 if (SharedSerial.Connected && !String.IsNullOrEmpty(message)) {
-                    tl.LogMessage("Telescope", "Send message: " + msg);
+                    tl.LogMessage("Telescope", "Send message: " + message);
                     SharedSerial.ClearBuffers();
-                    SharedSerial.Transmit(msg);
+                    SharedSerial.Transmit(message);
                     if (reply) {
                         string retVal;
                         string cmdGroup = message.Substring(1, 1);
@@ -143,7 +145,7 @@ namespace ASCOM.OpenAstroTracker {
                                 break;
                             default:
                                 retVal = SharedSerial.ReceiveTerminated("#");
-                                retVal.Replace("#", "");
+                                retVal = retVal.Replace("#", "");
                                 break;
                         }
 
@@ -204,13 +206,16 @@ namespace ASCOM.OpenAstroTracker {
                                     "Timeout", MessageBoxButtons.OK, MessageBoxIcon.Error);
                                 SharedResources.tl.LogMessage("Serial port read timeout", exception.Message);
                             }
-
-                            Connections++;
                         }
+                        Connections++;
+                        tl.LogMessage("Connected Set", $"{value} - Connection Count is {Connections} Clients");
                     }
                     else {
                         Connections--;
+                        tl.LogMessage("Connected Set", $"{value} - Connection Count is {Connections} Clients");
                         if (Connections <= 0) {
+                            Connections = 0;
+                            tl.LogMessage("Connection Set", $"Connection Count is {Connections} Disconnecting From Device");
                             SharedSerial.Transmit(":Qq#");
                             SharedSerial.Connected = false;
                         }
