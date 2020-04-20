@@ -22,40 +22,13 @@ namespace ASCOM.OpenAstroTracker {
         private string _driverId;
         private static string driverDescription = "OpenAstroTracker Telescope";
 
-        internal readonly string comPortProfileName = "COM Port"; // Constants used for Profile persistence
-        internal readonly string traceStateProfileName = "Trace Level";
-        internal readonly string latitudeProfileName = "Latitude";
-        internal readonly string longitudeProfileName = "Longitude";
-        internal readonly string elevationProfileName = "Elevation";
-
-        internal static string comPortDefault = "COM5";
-        internal static string traceStateDefault = "False";
-        internal static double latitudeDefault = 39.8283;
-        internal static double longitudeDefault = -98.5795;
-        internal static int elevationDefault = 1;
-
-        internal static string comPort; // Variables to hold the currrent device configuration
-        internal static bool traceState;
-        internal static double latitude;
-        internal static double longitude;
-        internal static double elevation;
         internal static double PolarisRAJNow = 0.0;
         internal static DriveRates driveRate = DriveRates.driveSidereal;
-        
-        public static string s_csDriverID;
 
-        private bool connectedState; // Private variable to hold the connected state
-        private Util utilities; // Private variable to hold an ASCOM Utilities object
-        private AstroUtils astroUtilities; // Private variable to hold an AstroUtils object to provide the Range method
-
-        private TraceLogger
-            TL; // Private variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
-
-        private ASCOM.Utilities.Serial objSerial;
-        public ASCOM.Astrometry.Transform.Transform transform;
-
-        private bool
-            connWait = false; // This is a lame hack to be able to transmit things w/ CommandString before we set connected to true.
+        private Util _utilities = new Util(); 
+        private AstroUtils _astroUtilities = new AstroUtils();
+        private TraceLogger _tl; // Private variable to hold the trace logger object (creates a diagnostic log file with information that you specify)
+        private Transform _transform = new Transform();
 
         private bool isParked = false;
         private bool isTracking = true;
@@ -63,34 +36,27 @@ namespace ASCOM.OpenAstroTracker {
         private double targetDec;
         private bool targetRASet = false;
         private bool targetDecSet = false;
-        private Mutex mutexBlind;
-        private Mutex mutexCommand;
+        private readonly Mutex _mutexCommand = new Mutex(false, "CommMutex");
+
+
+        private ProfileData Profile { get; set; } = SharedResources.ReadProfile();
 
         // 
         // Constructor - Must be public for COM registration!
         // 
         public Telescope() {
-            
             _driverId = Marshal.GenerateProgIdForType(this.GetType());
-            s_csDriverID = Marshal.GenerateProgIdForType(this.GetType());
-            
-            ReadProfile(); // Read device configuration from the ASCOM Profile store
-            TL = new TraceLogger("", "OpenAstroTracker");
-            TL.Enabled = traceState;
-            LogMessage("Telescope", "Starting initialization");
 
-            connectedState = false; // Initialise connected to false
-            utilities = new Util(); // Initialise util object
-            astroUtilities = new AstroUtils(); // Initialise new astro utiliites object
+            _tl = SharedResources.tl;
+            _tl.Enabled = Profile.TraceState;
+            LogMessage("Telescope", $"Starting initialization - v{Version}");
 
             // TODO: Implement your additional construction here
-            mutexCommand = new Mutex(false, "CommMutex");
-            transform = new Transform();
-            transform.SetJ2000(utilities.HMSToHours("02:31:51.12"), utilities.DMSToDegrees("89:15:51.4"));
-            transform.SiteElevation = SiteElevation;
-            transform.SiteLatitude = SiteLatitude;
-            transform.SiteLongitude = SiteLongitude;
-            PolarisRAJNow = transform.RATopocentric;
+            _transform.SetJ2000(_utilities.HMSToHours("02:31:51.12"), _utilities.DMSToDegrees("89:15:51.4"));
+            _transform.SiteElevation = SiteElevation;
+            _transform.SiteLatitude = SiteLatitude;
+            _transform.SiteLongitude = SiteLongitude;
+            PolarisRAJNow = _transform.RATopocentric;
             LogMessage("Telescope", "Completed initialization");
         }
 
@@ -110,10 +76,14 @@ namespace ASCOM.OpenAstroTracker {
             if (IsConnected)
                 System.Windows.Forms.MessageBox.Show("Already connected, just press OK");
 
-            using (SetupDialogForm F = new SetupDialogForm()) {
+            using (SetupDialogForm F = new SetupDialogForm(Profile)) {
                 System.Windows.Forms.DialogResult result = F.ShowDialog();
-                if (result == DialogResult.OK)
-                    WriteProfile(); // Persist device configuration values to the ASCOM Profile store
+                if (result == DialogResult.OK) {
+
+                    SharedResources.WriteProfile(F
+                        .GetProfileData()); // Persist device configuration values to the ASCOM Profile store
+                    Profile = SharedResources.ReadProfile();
+                }
             }
         }
 
@@ -139,10 +109,10 @@ namespace ASCOM.OpenAstroTracker {
                     }
 
                     case "Utility:JNowtoJ2000": {
-                        transform.SetTopocentric(System.Convert.ToDouble(ActionParameters.Split(',')[0]),
+                        _transform.SetTopocentric(System.Convert.ToDouble(ActionParameters.Split(',')[0]),
                             System.Convert.ToDouble(ActionParameters.Split(',')[1]));
-                        retVal = utilities.HoursToHMS(transform.RAJ2000, ":", ":", string.Empty) + "&" +
-                                 utilities.DegreesToDMS(transform.DecJ2000, "*", ":", string.Empty);
+                        retVal = _utilities.HoursToHMS(_transform.RAJ2000, ":", ":", string.Empty) + "&" +
+                                 _utilities.DegreesToDMS(_transform.DecJ2000, "*", ":", string.Empty);
                         break;
                     }
                 }
@@ -155,58 +125,33 @@ namespace ASCOM.OpenAstroTracker {
         }
 
         public void CommandBlind(string Command, bool Raw = false) {
-            if (!connWait)
-                CheckConnected("CommandBlind");
-            mutexCommand.WaitOne();
+            _mutexCommand.WaitOne();
 
             if (!Raw)
                 Command = Command + "#";
             try {
-                objSerial.Transmit(Command);
+                SharedResources.SendMessageBlind(Command);
                 LogMessage("CommandBlind", "Transmitted " + Command);
             }
             catch (Exception ex) {
                 LogMessage("CommandBlind(" + Command + ")", "Error : " + ex.Message);
             }
             finally {
-                mutexCommand.ReleaseMutex();
+                _mutexCommand.ReleaseMutex();
             }
         }
 
         public bool CommandBool(string Command, bool Raw = false) {
-            // CheckConnected("CommandBool")
-            // Dim ret As String = CommandString(Command, Raw)
-            // TODO decode the return string and return true or false
-            throw new MethodNotImplementedException("CommandBool");
+            throw new System.NotImplementedException();
         }
 
         public string CommandString(string Command, bool Raw = false) {
-            string response;
-            if (!connWait)
-                CheckConnected("CommandString");
-            mutexCommand.WaitOne();
+            _mutexCommand.WaitOne();
+
             if (!Raw)
                 Command = Command + "#";
             try {
-                objSerial.Transmit(Command);
-                LogMessage("CommandString", "Transmitted " + Command);
-                string cmdGroup = Command.Substring(1, 1);
-                switch (cmdGroup) {
-                    case "S":
-                    case "M":
-                    case "h":
-                    case "Q": {
-                        response = objSerial.ReceiveCounted(1);
-                        break;
-                    }
-
-                    default: {
-                        response = objSerial.ReceiveTerminated("#");
-                        response = response.Replace("#", "");
-                        break;
-                    }
-                }
-
+                var response = SharedResources.SendMessageString(Command);
                 LogMessage("CommandString", "Received " + response);
                 return response;
             }
@@ -215,65 +160,13 @@ namespace ASCOM.OpenAstroTracker {
                 return "255";
             }
             finally {
-                mutexCommand.ReleaseMutex();
+                _mutexCommand.ReleaseMutex();
             }
         }
 
         public bool Connected {
-            get {
-                LogMessage("Connected Get", IsConnected.ToString());
-                return IsConnected;
-            }
-            set {
-                if (value == IsConnected)
-                    return;
-
-                if (value) {
-                    try {
-                        connWait = true;
-                        objSerial = new Serial {
-                            PortName = comPort,
-                            Speed = SerialSpeed.ps57600,
-                            ReceiveTimeoutMs = 250,
-                            DTREnable = false  // disables resetting on connect.
-                    };
-                        objSerial.Connected = true;
-                        // Default of 5s is too high.  THis will have to be managed, however, for synced commands that take longer (:hP most notably)
-                        
-                        Thread.Sleep(2000); // Disgusting hack to work around arduino resetting when connected.
-                        // I don't know of any way to poll and see if the reset has completed
-                        CommandBlind(":I"); // OAT's command for entering PC Control mode
-                        if (SiderealTime - PolarisRAJNow < 0)
-                            CommandString(":SH" + utilities.HoursToHM(24 + (SiderealTime - PolarisRAJNow)), false);
-                        else
-                            CommandString(":SH" + utilities.HoursToHM(SiderealTime - PolarisRAJNow), false);
-                        string sign = "+";
-                        if (SiteLatitude < 0)
-                            sign = "-";
-                        CommandString(
-                            ":SY" + sign + utilities.DegreesToDMS(90, "*", ":", string.Empty) + "." +
-                            utilities.HoursToHMS(SiderealTime, ":", ":"), false);
-                        LogMessage("Connected Set", "Connecting to port " + comPort);
-                        connWait = false;
-                        connectedState = true;
-                    }
-                    catch (Exception ex) {
-                        throw new ASCOM.DriverException(ex.Message);
-                        LogMessage("Connected Set", "Error Connecting to port " + comPort + " - " + ex.Message);
-                    }
-                }
-                else
-                    try {
-                        CommandBlind(":Qq"); // OAT's command for exiting PC Control mode
-                        Thread.Sleep(1000);
-                        objSerial.Connected = false;
-                        connectedState = false;
-                        LogMessage("Connected Set", "Disconnecting from port " + comPort);
-                    }
-                    catch (Exception ex) {
-                        LogMessage("Connected Set", "Error Disconnecting from port " + comPort + " - " + ex.Message);
-                    }
-            }
+            get => SharedResources.Connected;
+            set => SharedResources.Connected = value;
         }
 
         public string Description {
@@ -319,13 +212,13 @@ namespace ASCOM.OpenAstroTracker {
 
         public void Dispose() {
             // Clean up the tracelogger and util objects
-            TL.Enabled = false;
-            TL.Dispose();
-            TL = null;
-            utilities.Dispose();
-            utilities = null;
-            astroUtilities.Dispose();
-            astroUtilities = null;
+            _tl.Enabled = false;
+            _tl.Dispose();
+            _tl = null;
+            _utilities.Dispose();
+            _utilities = null;
+            _astroUtilities.Dispose();
+            _astroUtilities = null;
         }
 
 
@@ -539,7 +432,7 @@ namespace ASCOM.OpenAstroTracker {
                 double declination__1 = 0.0;
                 string scopeDec = CommandString(":GD");
                 LogMessage("Declination", "Get - " + scopeDec);
-                declination__1 = utilities.DMSToDegrees(scopeDec);
+                declination__1 = _utilities.DMSToDegrees(scopeDec);
                 return declination__1;
             }
         }
@@ -658,7 +551,7 @@ namespace ASCOM.OpenAstroTracker {
         public double RightAscension {
             get {
                 double rightAscension__1 = 0.0;
-                rightAscension__1 = utilities.HMSToHours(CommandString(":GR"));
+                rightAscension__1 = _utilities.HMSToHours(CommandString(":GR"));
                 LogMessage("RightAscension", rightAscension__1.ToString());
                 return rightAscension__1;
             }
@@ -709,7 +602,7 @@ namespace ASCOM.OpenAstroTracker {
                 // now using novas 3.1
                 double lst = 0.0;
                 using (ASCOM.Astrometry.NOVAS.NOVAS31 novas = new ASCOM.Astrometry.NOVAS.NOVAS31()) {
-                    double jd = utilities.DateUTCToJulian(DateTime.UtcNow);
+                    double jd = _utilities.DateUTCToJulian(DateTime.UtcNow);
                     novas.SiderealTime(jd, 0, novas.DeltaT(jd), ASCOM.Astrometry.GstType.GreenwichMeanSiderealTime,
                         ASCOM.Astrometry.Method.EquinoxBased, ASCOM.Astrometry.Accuracy.Reduced, ref lst);
                 }
@@ -718,7 +611,7 @@ namespace ASCOM.OpenAstroTracker {
                 lst += SiteLongitude / 360.0 * 24.0;
 
                 // Reduce to the range 0 to 24 hours
-                lst = astroUtilities.ConditionRA(lst);
+                lst = _astroUtilities.ConditionRA(lst);
 
                 LogMessage("SiderealTime", "Get - " + lst.ToString());
                 return lst;
@@ -727,13 +620,13 @@ namespace ASCOM.OpenAstroTracker {
 
         public double SiteElevation {
             get {
-                LogMessage("SiteElevation Get", elevation.ToString());
-                return elevation;
+                LogMessage("SiteElevation Get", Profile.Elevation.ToString());
+                return Profile.Elevation;
             }
             set {
                 if (value >= -300 && value <= 10000) {
                     LogMessage("SiteElevation Set", value.ToString());
-                    elevation = value;
+                    Profile.Elevation = value;
                 }
                 else
                     throw new ASCOM.InvalidValueException("SiteElevation");
@@ -742,8 +635,8 @@ namespace ASCOM.OpenAstroTracker {
 
         public double SiteLatitude {
             get {
-                LogMessage("SiteLatitude Get", latitude.ToString());
-                return latitude;
+                LogMessage("SiteLatitude Get", Profile.Latitude.ToString());
+                return Profile.Latitude;
             }
             set {
                 LogMessage("SiteLatitude Set", "Not implemented");
@@ -753,8 +646,8 @@ namespace ASCOM.OpenAstroTracker {
 
         public double SiteLongitude {
             get {
-                LogMessage("SiteLongitude Get", longitude.ToString());
-                return longitude;
+                LogMessage("SiteLongitude Get", Profile.Longitude.ToString());
+                return Profile.Longitude;
             }
             set {
                 LogMessage("SiteLongitude Set", "Not implemented");
@@ -789,8 +682,8 @@ namespace ASCOM.OpenAstroTracker {
                 if (!AtPark) {
                     LogMessage("SlewToCoordinates",
                         "RA " + RightAscension.ToString() + ", Dec " + Declination.ToString());
-                    var strRAcmd = ":Sr" + utilities.HoursToHMS(RightAscension, ":", ":");
-                    var strDeccmd = utilities.DegreesToDMS(Declination, "*", ":", "");
+                    var strRAcmd = ":Sr" + _utilities.HoursToHMS(RightAscension, ":", ":");
+                    var strDeccmd = _utilities.DegreesToDMS(Declination, "*", ":", "");
                     if (Declination >= 0)
                         strDeccmd = "+" + strDeccmd;
                     strDeccmd = ":Sd" + strDeccmd;
@@ -821,8 +714,8 @@ namespace ASCOM.OpenAstroTracker {
                 if (!AtPark) {
                     LogMessage("SlewToCoordinatesAsync",
                         "RA " + RightAscension.ToString() + ", Dec " + Declination.ToString());
-                    var strRAcmd = ":Sr" + utilities.HoursToHMS(RightAscension, ":", ":");
-                    var strDeccmd = utilities.DegreesToDMS(Declination, "*", ":", "");
+                    var strRAcmd = ":Sr" + _utilities.HoursToHMS(RightAscension, ":", ":");
+                    var strDeccmd = _utilities.DegreesToDMS(Declination, "*", ":", "");
                     if (Declination >= 0)
                         strDeccmd = "+" + strDeccmd;
                     strDeccmd = ":Sd" + strDeccmd;
@@ -876,16 +769,16 @@ namespace ASCOM.OpenAstroTracker {
                         sign = "+";
                     string success =
                         CommandString(
-                            ":SY" + sign + utilities.DegreesToDMS(Declination, "*", ":", string.Empty) + "." +
-                            utilities.HoursToHMS(RightAscension, ":", ":"), false);
+                            ":SY" + sign + _utilities.DegreesToDMS(Declination, "*", ":", string.Empty) + "." +
+                            _utilities.HoursToHMS(RightAscension, ":", ":"), false);
                     if (success == "1")
                         LogMessage("SyncToCoordinates",
-                            "Synced to " + utilities.DegreesToDMS(Declination) + ", " +
-                            utilities.HoursToHMS(RightAscension));
+                            "Synced to " + _utilities.DegreesToDMS(Declination) + ", " +
+                            _utilities.HoursToHMS(RightAscension));
                     else {
                         LogMessage("SyncToCoordinates",
-                            "Err - Failed to sync to " + utilities.DegreesToDMS(Declination) + ", " +
-                            utilities.HoursToHMS(RightAscension));
+                            "Err - Failed to sync to " + _utilities.DegreesToDMS(Declination) + ", " +
+                            _utilities.HoursToHMS(RightAscension));
                         throw new ASCOM.DriverException("SyncToCoordinates");
                     }
                 }
@@ -911,16 +804,16 @@ namespace ASCOM.OpenAstroTracker {
                             sign = "+";
                         string success =
                             CommandString(
-                                ":SY" + sign + utilities.DegreesToDMS(TargetDeclination, "*", ":", string.Empty) + "." +
-                                utilities.HoursToHMS(TargetRightAscension, ":", ":"), false);
+                                ":SY" + sign + _utilities.DegreesToDMS(TargetDeclination, "*", ":", string.Empty) + "." +
+                                _utilities.HoursToHMS(TargetRightAscension, ":", ":"), false);
                         if (success == "1")
                             LogMessage("SyncToTarget",
-                                "Synced to " + utilities.DegreesToDMS(TargetDeclination) + ", " +
-                                utilities.HoursToHMS(TargetRightAscension));
+                                "Synced to " + _utilities.DegreesToDMS(TargetDeclination) + ", " +
+                                _utilities.HoursToHMS(TargetRightAscension));
                         else {
                             LogMessage("SyncToTarget",
-                                "Failed to sync to " + utilities.DegreesToDMS(TargetDeclination) + ", " +
-                                utilities.HoursToHMS(TargetRightAscension));
+                                "Failed to sync to " + _utilities.DegreesToDMS(TargetDeclination) + ", " +
+                                _utilities.HoursToHMS(TargetRightAscension));
                             throw new ASCOM.DriverException("SyncToTarget");
                         }
                     }
@@ -1057,7 +950,6 @@ namespace ASCOM.OpenAstroTracker {
         // to help with
 
 #if INPROCESS
-
         private static void RegUnregASCOM(bool bRegister) {
             using (Profile P = new Profile() {DeviceType = "Telescope"}) {
                 if (bRegister)
@@ -1081,12 +973,8 @@ namespace ASCOM.OpenAstroTracker {
         /// <summary>
         ///     ''' Returns true if there is a valid connection to the driver hardware
         ///     ''' </summary>
-        private bool IsConnected {
-            get {
-                // TODO check that the driver hardware connection exists and is connected to the hardware
-                return connectedState;
-            }
-        }
+        // TODO check that the driver hardware connection exists and is connected to the hardware
+        private bool IsConnected => SharedResources.Connected;
 
         /// <summary>
         ///     ''' Use this function to throw an exception if we aren't connected to the hardware
@@ -1096,38 +984,6 @@ namespace ASCOM.OpenAstroTracker {
             if (!IsConnected)
                 throw new NotConnectedException(message);
         }
-
-        /// <summary>
-        ///     ''' Read the device configuration from the ASCOM Profile store
-        ///     ''' </summary>
-        internal void ReadProfile() {
-            using (Profile driverProfile = new Profile()) {
-                driverProfile.DeviceType = "Telescope";
-                traceState = Convert.ToBoolean(driverProfile.GetValue(_driverId, traceStateProfileName, string.Empty,
-                    traceStateDefault));
-                comPort = driverProfile.GetValue(_driverId, comPortProfileName, string.Empty, comPortDefault);
-                Double.TryParse(driverProfile.GetValue(_driverId, latitudeProfileName, string.Empty, ""), out latitude);
-                Double.TryParse(driverProfile.GetValue(_driverId, longitudeProfileName, string.Empty, ""),
-                    out longitude);
-                Double.TryParse(driverProfile.GetValue(_driverId, elevationProfileName, string.Empty, ""),
-                    out elevation);
-            }
-        }
-
-        /// <summary>
-        ///     ''' Write the device configuration to the  ASCOM  Profile store
-        ///     ''' </summary>
-        internal void WriteProfile() {
-            using (Profile driverProfile = new Profile()) {
-                driverProfile.DeviceType = "Telescope";
-                driverProfile.WriteValue(_driverId, traceStateProfileName, traceState.ToString());
-                driverProfile.WriteValue(_driverId, comPortProfileName, comPort.ToString());
-                driverProfile.WriteValue(_driverId, latitudeProfileName, latitude.ToString());
-                driverProfile.WriteValue(_driverId, longitudeProfileName, longitude.ToString());
-                driverProfile.WriteValue(_driverId, elevationProfileName, elevation.ToString());
-            }
-        }
-
 
         private int PollUntilZero(string command) {
             // Takes a command to be sent via CommandString, and resends every 1000ms until a 0 is returned.  Returns 0 only when complete.
@@ -1142,7 +998,7 @@ namespace ASCOM.OpenAstroTracker {
 
         private void LogMessage(string identifier, string message) {
             Debug.WriteLine($"{identifier} - {message}");
-            TL.LogMessage(identifier, message);
+            _tl.LogMessage(identifier, message);
         }
     }
 }

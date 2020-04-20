@@ -1,11 +1,11 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30011.22
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAstroTracker", "OpenAstroTracker.csproj", "{3689A2CB-94C5-4012-A5CF-7E7D1DD27143}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAstroTracker", "OpenAstroTracker\OpenAstroTracker.csproj", "{3689A2CB-94C5-4012-A5CF-7E7D1DD27143}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAstroTracker ASCOM", "..\OpenAstroTracker ASCOM\OpenAstroTracker ASCOM.csproj", "{64308775-BD4A-469C-BCAB-3ED830B811AF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TelescopeDriver", "TelescopeDriver\TelescopeDriver.csproj", "{64308775-BD4A-469C-BCAB-3ED830B811AF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

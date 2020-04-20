@@ -6,22 +6,27 @@ using System.Windows.Forms;
 namespace ASCOM.OpenAstroTracker {
     [ComVisible(false)] // Form not registered for COM!
     public partial class SetupDialogForm : Form {
-        public SetupDialogForm() {
+        private ProfileData _profile;
+
+        public SetupDialogForm(ProfileData profile) {
+            _profile = profile;
             InitializeComponent();
         }
 
         private void OK_Button_Click(System.Object sender, System.EventArgs e) // OK button event handler
         {
             // Persist new values of user settings to the ASCOM profile
-            Telescope.comPort =
+            _profile.ComPort =
                 (string) ComboBoxComPort.SelectedItem; // Update the state variables with results from the dialogue
-            Telescope.traceState = chkTrace.Checked;
-            Telescope.latitude = System.Convert.ToDouble(txtLat.Text);
-            Telescope.longitude = System.Convert.ToDouble(txtLong.Text);
-            Telescope.elevation = System.Convert.ToInt32(txtElevation.Text);
+            _profile.TraceState = chkTrace.Checked;
+            _profile.Latitude = System.Convert.ToDouble(txtLat.Text);
+            _profile.Longitude = System.Convert.ToDouble(txtLong.Text);
+            _profile.Elevation = System.Convert.ToInt32(txtElevation.Text);
             this.DialogResult = System.Windows.Forms.DialogResult.OK;
             this.Close();
         }
+
+        public ProfileData GetProfileData() => _profile;
 
         private void Cancel_Button_Click(System.Object sender, System.EventArgs e) // Cancel button event handler
         {
@@ -50,17 +55,16 @@ namespace ASCOM.OpenAstroTracker {
         }
 
         private void InitUI() {
-            chkTrace.Checked = Telescope.traceState;
+            chkTrace.Checked = _profile.TraceState;
             // set the list of com ports to those that are currently available
             ComboBoxComPort.Items.Clear();
-            ComboBoxComPort.Items.AddRange(System.IO.Ports.SerialPort
-                .GetPortNames()); // use System.IO because it's static
+            ComboBoxComPort.Items.AddRange(System.IO.Ports.SerialPort.GetPortNames()); // use System.IO because it's static
             // select the current port if possible...
-            if (ComboBoxComPort.Items.Contains(Telescope.comPort))
-                ComboBoxComPort.SelectedItem = Telescope.comPort;
-            txtLat.Text = Telescope.latitude.ToString();
-            txtLong.Text = Telescope.longitude.ToString();
-            txtElevation.Text = Telescope.elevation.ToString();
+            if (ComboBoxComPort.Items.Contains(_profile.ComPort))
+                ComboBoxComPort.SelectedItem = _profile.ComPort;
+            txtLat.Text = _profile.Latitude.ToString();
+            txtLong.Text = _profile.Longitude.ToString();
+            txtElevation.Text = _profile.Elevation.ToString();
         }
 
         private void txtLat_KeyPress(object sender, KeyPressEventArgs e) {
