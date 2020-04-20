@@ -210,14 +210,7 @@ namespace ASCOM.OpenAstroTracker {
         }
 
         public void Dispose() {
-            // Clean up the tracelogger and util objects
-            _tl.Enabled = false;
-            _tl.Dispose();
-            _tl = null;
-            _utilities.Dispose();
-            _utilities = null;
-            _astroUtilities.Dispose();
-            _astroUtilities = null;
+            Connected = false;
         }
 
 
