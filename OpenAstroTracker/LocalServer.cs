@@ -195,6 +195,9 @@ namespace ASCOM.OpenAstroTracker
                         IntPtr lParam = new IntPtr(0);
                         PostThreadMessage(MainThreadId, 0x0012, wParam, lParam);
                     }
+                    while (SharedResources.Connected) {
+                        SharedResources.Connected = false;
+                    }
                 }
             }
         }
