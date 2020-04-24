@@ -19,6 +19,10 @@ steps:
 
 - task: NuGetCommand@2
   inputs:
+    command: 'restore'
+    restoreSolution: '$(solution)'
+    feedsToUse: 'config'
+    nugetConfigPath: 'nuget.config'
     restoreSolution: '$(solution)'
 
 - task: VSBuild@1
@@ -26,6 +30,10 @@ steps:
     solution: '$(solution)'
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
+
+- task: CmdLine@2
+  inputs:
+    script: '$(Build.SourcesDirectory)\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(Build.SourcesDirectory)\OpenAstroTracker Setup.iss"'
 
 - task: VSTest@2
   inputs:
