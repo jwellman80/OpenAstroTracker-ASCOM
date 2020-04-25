@@ -23,12 +23,14 @@ steps:
     command: 'restore'
     restoreSolution: '$(solutionDir)\OpenAstroTracker\packages.config'
     feedsToUse: 'select'
+    restoreDirectory: 'packages'
 
 - task: NuGetCommand@2
   inputs:
     command: 'restore'
     restoreSolution: '$(solutionDir)\TelescopeDriver\packages.config'
     feedsToUse: 'select'
+    restoreDirectory: 'packages'
 
 
 - task: VSBuild@1
