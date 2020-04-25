@@ -10,7 +10,8 @@ pool:
   vmImage: 'windows-latest'
 
 variables:
-  solution: 'OpenAstroTracker.sln'
+  solutionDir: 'Software\OpenAstroTracker ASCOM'
+  solution: '$(solutionDir)\OpenAstroTracker.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
 
@@ -22,6 +23,7 @@ steps:
     command: 'restore'
     restoreSolution: '$(solution)'
     feedsToUse: 'select'
+    restoreDirectory: '$(solutionDir)\packages'
 
 - task: VSBuild@1
   inputs:
@@ -31,7 +33,7 @@ steps:
 
 - task: CmdLine@2
   inputs:
-    script: '$(Build.SourcesDirectory)\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(Build.SourcesDirectory)\OpenAstroTracker Setup.iss"'
+    script: '$(solutionDir)\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(Build.SourcesDirectory)\OpenAstroTracker Setup.iss"'
 
 - task: VSTest@2
   inputs:
