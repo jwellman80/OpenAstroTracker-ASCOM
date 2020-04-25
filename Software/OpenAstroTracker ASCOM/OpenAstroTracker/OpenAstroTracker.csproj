@@ -120,7 +120,6 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="ASCOM.png" />
-    <Content Include="ReadMe.htm" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
