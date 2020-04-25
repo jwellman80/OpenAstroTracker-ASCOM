@@ -21,8 +21,15 @@ steps:
 - task: NuGetCommand@2
   inputs:
     command: 'restore'
-    restoreSolution: '$(solution)'
+    restoreSolution: '$(solutionDir)\OpenAstroTracker\packages.config'
     feedsToUse: 'select'
+
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: '$(solutionDir)\TelescopeDriver\packages.config'
+    feedsToUse: 'select'
+
 
 - task: VSBuild@1
   inputs:
@@ -33,7 +40,7 @@ steps:
 
 - task: CmdLine@2
   inputs:
-    script: '$(solutionDir)\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(Build.SourcesDirectory)\OpenAstroTracker Setup.iss"'
+    script: '$(solutionDir)\OpenAstroTracker\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(solutionDir)\OpenAstroTracker Setup.iss"'
 
 - task: VSTest@2
   inputs:
