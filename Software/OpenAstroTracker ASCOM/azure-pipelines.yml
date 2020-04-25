@@ -17,15 +17,11 @@ variables:
 steps:
 - task: NuGetToolInstaller@1
 
-# - task: NuGetCommand@2
-#   inputs:
-#     command: 'restore'
-#     restoreSolution: '$(solution)'
-#     feedsToUse: 'select'
-
-- task: CmdLine@2
+- task: NuGetCommand@2
   inputs:
-    script: 'nuget restore $(solution)'
+    command: 'restore'
+    restoreSolution: '$(solution)'
+    feedsToUse: 'select'
 
 - task: VSBuild@1
   inputs:
