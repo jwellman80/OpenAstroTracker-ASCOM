@@ -41,7 +41,7 @@ steps:
 
 - task: CmdLine@2
   inputs:
-    script: 'OpenAstroTracker\packages\Tools.InnoSetup.5.6.1\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "OpenAstroTracker Setup.iss"'
+    script: '"OpenAstroTracker\packages\Tools.InnoSetup.5.6.1\tools\ISCC.exe" /F "OpenAstroTracker ASCOM" "OpenAstroTracker Setup.iss"'
     workingDirectory: '$(solutionDir)'
 
 - task: VSTest@2
