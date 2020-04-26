@@ -47,11 +47,11 @@ extern bool inSerialControl;
 // #define SUPPORT_HEATING
 
 // Uncomment to support Guided Startup 
-#define SUPPORT_GUIDED_STARTUP
+// #define SUPPORT_GUIDED_STARTUP
 
 // Uncomment to support full GO (was POI) menu. 
 // If this is commented out you still have a GO menu that has Home and Park.
-#define SUPPORT_POINTS_OF_INTEREST
+//  #define SUPPORT_POINTS_OF_INTEREST
 
 // Uncomment to support CTRL menu, allowing you to manually slew the mount with the buttons. 
 #define SUPPORT_MANUAL_CONTROL
