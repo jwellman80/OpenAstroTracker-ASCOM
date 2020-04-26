@@ -71,3 +71,15 @@ steps:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)'
     ArtifactName: 'OpenAstroTracker'
     publishLocation: 'Container'
+
+- task: GitHubRelease@1
+  inputs:
+    gitHubConnection: 'jwellman80'
+    repositoryName: 'jwellman80/OpenAstroTracker-ASCOM'
+    action: 'create'
+    target: '$(Build.SourceVersion)'
+    tagSource: 'gitTag'
+    title: 'OpenAstroTracker ASCOM - $(version)'
+    releaseNotesFilePath: '$(solutionDir)\OpenAstroTracker\ReadMe.txt'
+    changeLogCompareToRelease: 'lastFullRelease'
+    changeLogType: 'issueBased'
