@@ -83,4 +83,4 @@ steps:
     title: 'OpenAstroTracker ASCOM - $(version)'
     releaseNotesFilePath: '$(solutionDir)\OpenAstroTracker\ReadMe.txt'
     changeLogCompareToRelease: 'lastFullRelease'
-    changeLogType: 'issueBased'
+    changeLogType: 'commitBased'
