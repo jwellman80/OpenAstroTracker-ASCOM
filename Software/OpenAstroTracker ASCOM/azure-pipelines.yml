@@ -14,9 +14,11 @@ variables:
   solution: '$(solutionDir)\OpenAstroTracker.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  version: '1.0.$(BuildID).0'
 
 steps:
 - task: NuGetToolInstaller@1
+
 
 - task: NuGetCommand@2
   inputs:
