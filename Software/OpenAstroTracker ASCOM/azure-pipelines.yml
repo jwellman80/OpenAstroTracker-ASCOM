@@ -16,14 +16,15 @@ variables:
   buildConfiguration: 'Release'
   version: '1.0.$(BuildID).0'
 
+steps:
+
 - task: Update AssemblyInfo@1
   inputs:
     rootFolder: '$(Build.SourcesDirectory)'
     filePattern: 'AssemblyInfo.cs'
     assemblyVersion: '$(version)'
     assemblyFileVersion: '$(version)'
-
-steps:
+    
 - task: NuGetToolInstaller@1
 
 
