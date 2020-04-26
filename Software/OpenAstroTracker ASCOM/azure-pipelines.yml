@@ -14,16 +14,26 @@ variables:
   solution: '$(solutionDir)\OpenAstroTracker.sln'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  version: '1.0.$(BuildID).0'
 
 steps:
 - task: NuGetToolInstaller@1
 
+
 - task: NuGetCommand@2
   inputs:
     command: 'restore'
-    restoreSolution: '$(solution)'
+    restoreSolution: '$(solutionDir)\OpenAstroTracker\packages.config'
     feedsToUse: 'select'
-    restoreDirectory: '$(solutionDir)\OpenAstroTracker\packages'
+    restoreDirectory: 'packages'
+
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: '$(solutionDir)\TelescopeDriver\packages.config'
+    feedsToUse: 'select'
+    restoreDirectory: 'packages'
+
 
 - task: VSBuild@1
   inputs:
@@ -31,9 +41,11 @@ steps:
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
 
-- task: CmdLine@2
+- task: PowerShell@2
   inputs:
-    script: '$(solutionDir)\packages\Tools.InnoSetup*\tools\ISCC.exe /F "OpenAstroTracker ASCOM" "$(Build.SourcesDirectory)\OpenAstroTracker Setup.iss"'
+    targetType: 'inline'
+    script: '.\OpenAstroTracker\packages\Tools.InnoSetup.5.6.1\tools\ISCC.exe /F"OpenAstroTracker ASCOM" ''.\OpenAstroTracker Setup.iss'''
+    workingDirectory: '$(solutionDir)'
 
 - task: VSTest@2
   inputs:
