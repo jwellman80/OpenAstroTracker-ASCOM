@@ -8,7 +8,7 @@ namespace ASCOM.OpenAstroTracker {
     public partial class SetupDialogForm : Form {
         private ProfileData _profile;
 
-        public  SetupDialogForm(ProfileData profile) {
+        public SetupDialogForm(ProfileData profile) {
             _profile = profile;
             InitializeComponent();
 
