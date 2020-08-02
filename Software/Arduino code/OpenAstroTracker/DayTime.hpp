@@ -2,7 +2,7 @@
 #define _DAYTIME_HPP_
 
 #include <Arduino.h>
-#include "Globals.h"
+#include "Configuration_adv.hpp"
 
 // A class to handle hours, minutes, seconds in a unified manner, allowing
 // addition of hours, minutes, seconds, other times and conversion to string.
@@ -33,7 +33,7 @@ public:
   float getTotalMinutes() const;
   float getTotalSeconds() const;
 
-  int getTime(int& h, int& m, int& s) const;
+  void getTime(int& h, int& m, int& s) const;
   void set(int h, int m, int s);
   void set(const DayTime& other);
 
@@ -56,7 +56,8 @@ public:
   void subtractTime(const DayTime& other);
 
   // Convert to a standard string (like 14:45:06)
-  String ToString();
+  virtual const char* ToString() const;
+
   //protected:
   virtual void checkHours();
 };
@@ -75,12 +76,15 @@ public:
   int getDegrees();
 
   // Get degrees for printing component
-  int getPrintDegrees();
+  int getPrintDegrees() const;
 
   // Get total degrees
-  float getTotalDegrees();
+  float getTotalDegrees() const;
   //protected:
   virtual void checkHours() override;
+
+  // Convert to a standard string (like 14:45:06)
+  virtual const char* ToString() const override;
 
 private:
   void clampDegrees();

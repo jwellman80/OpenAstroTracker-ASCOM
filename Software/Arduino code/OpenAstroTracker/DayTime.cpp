@@ -1,4 +1,4 @@
-#include "Utility.h"
+#include "Utility.hpp"
 #include "DayTime.hpp"
 
 ///////////////////////////////////
@@ -67,7 +67,7 @@ float DayTime::getTotalSeconds() const {
   return 3600.0f * getHours() + (float)getMinutes() * 60.0f + (float)getSeconds();
 }
 
-int DayTime::getTime(int& h, int& m, int& s) const {
+void DayTime::getTime(int& h, int& m, int& s) const {
   h = hours;
   m = mins;
   s = secs;
@@ -155,20 +155,26 @@ void DayTime::subtractTime(const DayTime& other)
   addHours(-other.getHours());
 }
 
+char achBuf[32];
+
 // Convert to a standard string (like 14:45:06)
-String DayTime::ToString()
+const char* DayTime::ToString() const
 {
-  char achBuf[12];
   char* p = achBuf;
 
-  if (hours < 10) {
+  int absHours = hours < 0 ? -hours : hours;
+  if (hours < 0)
+  {
+    *p++ = '-';
+  }
+  if (absHours < 10) {
     *p++ = '0';
   }
   else {
-    *p++ = '0' + (hours / 10);
+    *p++ = '0' + (absHours / 10);
   }
 
-  *p++ = '0' + (hours % 10);
+  *p++ = '0' + (absHours % 10);
 
   *p++ = ':';
   if (mins < 10) {
@@ -188,8 +194,11 @@ String DayTime::ToString()
   }
 
   *p++ = '0' + (secs % 10);
-  *p++ = '\0';
-  return String(achBuf);
+  *p++ = ' ';
+  *p++ = '(';
+  strcpy(p, String(this->getTotalHours(), 5).c_str());
+  strcat(p, ")");
+  return achBuf;
 }
 
 
@@ -209,21 +218,70 @@ int DegreeTime::getDegrees() {
   return hours;
 }
 
-int DegreeTime::getPrintDegrees() {
-  return NORTHERN_HEMISPHERE ? hours + 90 : hours - 90;
+int DegreeTime::getPrintDegrees() const {
+  return NORTHERN_HEMISPHERE ? hours + 90 : -90 - hours;
 }
 
-float DegreeTime::getTotalDegrees() {
+float DegreeTime::getTotalDegrees() const {
   return getTotalHours();
 }
 
 void DegreeTime::checkHours() {
-  if (NORTHERN_HEMISPHERE) {
-    if (hours > 0) hours = 0;
-    if (hours < -180) hours = -180;
+  if (hours > 0) {
+    LOGV1(DEBUG_GENERAL, "CheckHours: Degrees is more than 0, clamping");
+    hours = 0;
+  }
+  if (hours < -180) {
+    LOGV1(DEBUG_GENERAL, "CheckHours: Degrees is less than -180, clamping");
+    hours = -180;
+  }
+}
+
+char achBufDeg[32];
+
+// Convert to a standard string (like 14:45:06)
+const char* DegreeTime::ToString() const
+{
+  char* p = achBufDeg;
+  int abshours = getPrintDegrees() < 0 ? -getPrintDegrees() : getPrintDegrees();
+
+  if (getPrintDegrees() < 0) {
+    *p++ = '-';
   }
   else {
-    if (hours > 180) hours = 180;
-    if (hours < 0) hours = 0;
+    *p++ = '+';
   }
+
+  if (abshours < 10) {
+    *p++ = '0';
+  }
+  else {
+    *p++ = '0' + (abshours / 10);
+  }
+  *p++ = '0' + (abshours % 10);
+
+  *p++ = ':';
+  if (mins < 10) {
+    *p++ = '0';
+  }
+  else {
+    *p++ = '0' + (mins / 10);
+  }
+  *p++ = '0' + (mins % 10);
+
+  *p++ = ':';
+  if (secs < 10) {
+    *p++ = '0';
+  }
+  else {
+    *p++ = '0' + (secs / 10);
+  }
+
+  *p++ = '0' + (secs % 10);
+  *p++ = ' ';
+  *p++ = '(';
+  strcpy(p, String(NORTHERN_HEMISPHERE ? getTotalHours() + 90 : -90 - getTotalHours(), 4).c_str());
+  strcat(p, ")");
+
+  return achBufDeg;
 }

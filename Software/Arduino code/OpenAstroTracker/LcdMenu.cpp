@@ -1,7 +1,8 @@
-#include "Utility.h"
+#include "Utility.hpp"
+#include "EPROMStore.hpp"
 #include "LcdMenu.hpp"
 
-#ifndef HEADLESS_CLIENT
+#if HEADLESS_CLIENT == 0
 
 // Class that drives the LCD screen with a menu
 // You add a string and an id item and this class handles the display and navigation
@@ -9,7 +10,6 @@
 LcdMenu::LcdMenu(byte cols, byte rows, int maxItems) : _lcd(8, 9, 4, 5, 6, 7) {
   //_lcd = new LiquidCrystal(8, 9, 4, 5, 6, 7);
   _lcd.begin(cols, rows);
-  _activeId = 0;
   _numMenuItems = 0;
   _activeMenuIndex = 0;
   _longestDisplay = 0;
@@ -18,7 +18,12 @@ LcdMenu::LcdMenu(byte cols, byte rows, int maxItems) : _lcd(8, 9, 4, 5, 6, 7) {
   _activeCol = -1;
   _lastDisplay[0] = "";
   _lastDisplay[1] = "";
-  _menuItems = new MenuItem * [maxItems];
+  _menuItems = new MenuItem * [maxItems];  
+
+  _brightness = EPROMStore::Storage()->read(11);
+  LOGV2(DEBUG_INFO, "LCD: Brightness from EEPROM is %d", _brightness);
+  // pinMode(10, OUTPUT);
+  // analogWrite(10, _brightness);
 
   // Create special characters for degrees and arrows
   _lcd.createChar(_degrees, DegreesBitmap);
@@ -48,12 +53,11 @@ void LcdMenu::addItem(const char* disp, byte id) {
 
 // Get the currently active item ID
 byte LcdMenu::getActive() {
-  return _activeId;
+  return _menuItems[_activeMenuIndex]->id();
 }
 
 // Set the active menu item
 void LcdMenu::setActive(byte id) {
-  _activeId = id;
   for (byte i = 0; i < _numMenuItems; i++) {
     if (_menuItems[i]->id() == id) {
       _activeMenuIndex = i;
@@ -73,11 +77,30 @@ void LcdMenu::clear() {
   _lcd.clear();
 }
 
+// Set the brightness of the backlight
+void LcdMenu::setBacklightBrightness(int level, bool persist) {
+  _brightness = level;
+
+  LOGV2(DEBUG_INFO, "LCD: Writing %d as brightness", _brightness  );
+
+  // analogWrite(10, _brightness);
+
+  LOGV2(DEBUG_INFO, "LCD: Wrote %d as brightness", _brightness  );
+  if (persist) {
+    LOGV2(DEBUG_INFO, "LCD: Saving %d as brightness", (_brightness & 0x00FF));
+    EPROMStore::Storage()->update(11, (byte)(_brightness & 0x00FF));
+  }
+}
+
+// Get the current brightness
+int LcdMenu::getBacklightBrightness() {
+  return _brightness;
+}
+
 // Go to the next menu item from currently active one
 void LcdMenu::setNextActive() {
 
   _activeMenuIndex = adjustWrap(_activeMenuIndex, 1, 0, _numMenuItems - 1);
-  _activeId = _menuItems[_activeMenuIndex]->id();
 
   // Update the display
   updateDisplay();
@@ -105,7 +128,7 @@ void LcdMenu::updateDisplay() {
   // Build the entire menu string
   for (byte i = 0; i < _numMenuItems; i++) {
     MenuItem* item = _menuItems[i];
-    bool isActive = item->id() == _activeId;
+    bool isActive = i == _activeMenuIndex;
     sprintf(scratchBuffer, "%c%s%c", isActive ? '>' : ' ', item->display(), isActive ? '<' : ' ');
 
     // For the active item remember where it starts in the string and insert selector arrows
@@ -129,7 +152,7 @@ void LcdMenu::updateDisplay() {
   }
 
   // Display the actual menu string
-  while ((pBufMenu < bufMenu + _columns) && (offsetIntoString < menuString.length())) {
+  while ((pBufMenu < bufMenu + _columns) && (offsetIntoString < (int)menuString.length())) {
     *(pBufMenu++) = menuString[offsetIntoString++];
   }
 
@@ -176,7 +199,7 @@ void LcdMenu::printMenu(String line) {
 
     _lcd.setCursor(_activeCol, _activeRow);
     int spaces = _columns - line.length();
-    for (int i = 0; i < line.length(); i++) {
+    for (unsigned int i = 0; i < line.length(); i++) {
       printChar(line[i]);
     }
 
@@ -285,3 +308,50 @@ void LcdMenu::printMenu(String line) {}
 void LcdMenu::printChar(char ch) {}
 
 #endif
+
+/*
+class SubMenu {
+	
+  display() { }
+  onUp() { } 
+  onDown() { } 
+
+	}
+}
+
+class Menu {
+	List<SubMenu> subMenu
+	int activeSubIndex=0
+	UseContinuousKeys(UP|DOWN|LEFT|RIGHT)
+
+	virtual OnUp() { previousSubmenu }
+	virtual OnDown() { nextSubmenu }
+	virtual OnRight() { nextmenu }	
+	virtual OnLeft() { nextItemInSubmenu }
+	virtual OnSelect() { confirm }
+	
+	displayMenu() { }
+	
+	run(){
+		if (any continuous keys)
+		{
+			if 
+		}
+	}
+}
+
+class MenuSystem {
+	List<Menu> menus;
+	
+	run() {
+		if (!activeMenu->run())
+		{
+			activeMenu++
+		}
+	}
+}
+
+Menu RA ;
+RA.fnDisplay = [] { _lcdMenu.goto(0,1); _lcdMenu.printMenu(_mount.targetRA()); }
+RA.fnUp() = [] { }
+*/

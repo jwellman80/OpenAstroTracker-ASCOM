@@ -2,10 +2,10 @@
 #define _LCDMENU_HPP_
 
 #include <Arduino.h>
-#ifndef HEADLESS_CLIENT
+#if HEADLESS_CLIENT == 0
 #include <LiquidCrystal.h>
 #endif
-#include "Globals.h"
+#include "Configuration_adv.hpp"
 
 // A single menu item (like RA, HEAT, POL, etc.)
 // The ID is just a number, it has no relevance for the order of the items
@@ -50,6 +50,10 @@ public:
   // Pass thru utility function
   void setCursor(byte col, byte row);
 
+  // Set and get the brightness of the backlight
+  void setBacklightBrightness(int level, bool persist = true);
+  int getBacklightBrightness();
+
   // Pass thru utility function
   void clear();
 
@@ -69,17 +73,17 @@ private:
   void printChar(char ch);
 
 private:
-#ifndef HEADLESS_CLIENT
+#if HEADLESS_CLIENT == 0
   LiquidCrystal _lcd;   // The LCD screen that we'll display the menu on
   MenuItem** _menuItems;  // The first menu item (linked list)
   byte _numMenuItems;
   byte _activeMenuIndex;
-  byte _activeId;         // The id of the currently active menu item
   byte _longestDisplay;   // The number of characters in the longest menu item
   byte _columns;          // The number of columns in the LCD display
   byte _activeRow;        // The row that the LCD cursor is on
   byte _activeCol;        // The column that the LCD cursor is on
   String _lastDisplay[2]; // The last string that was displayed on each row
+  int _brightness;
 
   byte _degrees = 1;
   byte _minutes = 2;
